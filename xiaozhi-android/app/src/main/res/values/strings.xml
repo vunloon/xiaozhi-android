@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Xiaozhi</string>
+
+    <!-- Activation -->
+    <string name="activation_title">Device Activation</string>
+    <string name="activation_code_label">Verification Code</string>
+    <string name="activation_instructions">Open xiaozhi.me in a browser, then add a new device under your account using the code above.</string>
+    <string name="activation_open_site">Open xiaozhi.me</string>
+    <string name="activation_waiting">Waiting for user to enter the code…</string>
+    <string name="activation_success">Device activated</string>
+    <string name="activation_failed">Activation failed: %1$s</string>
+    <string name="activation_retry">Retry</string>
+    <string name="activation_copy_code">Copy code</string>
+    <string name="activation_code_copied">Code copied to clipboard</string>
+
+    <!-- Chat -->
+    <string name="chat_ptt_hint">Hold to talk</string>
+    <string name="chat_listening">Listening…</string>
+    <string name="chat_speaking">Speaking…</string>
+    <string name="chat_connecting">Connecting…</string>
+    <string name="chat_disconnected">Disconnected</string>
+    <string name="chat_you">You</string>
+    <string name="chat_assistant">Xiaozhi</string>
+
+    <!-- Tool drawer -->
+    <string name="tool_drawer_title">Tool activity</string>
+    <string name="tool_drawer_empty">No tool calls yet</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_disconnect">Disconnect</string>
+    <string name="settings_reconnect">Reconnect</string>
+    <string name="settings_about">About</string>
+
+    <!-- Service -->
+    <string name="service_notification_title">Xiaozhi is running</string>
+    <string name="service_notification_text">Tap to return to the app</string>
+    <string name="service_notification_listening">Listening</string>
+    <string name="service_notification_speaking">Speaking</string>
+
+    <!-- Permissions -->
+    <string name="permission_mic_title">Microphone permission required</string>
+    <string name="permission_mic_rationale">Xiaozhi needs the microphone to talk with you. Please grant it on the next screen.</string>
+    <string name="permission_mic_open_settings">Open settings</string>
+    <string name="permission_grant">Grant</string>
+
+    <!-- Errors -->
+    <string name="error_network">Network error: %1$s</string>
+    <string name="error_activation">Activation error: %1$s</string>
+    <string name="error_connection_failed">Connection failed: %1$s</string>
+</resources>

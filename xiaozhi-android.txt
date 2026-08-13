@@ -1,0 +1,90 @@
+Plan 1 implementation complete. Here's the final summary:
+
+✅ Plan 1 — xiaozhi Voice Chat Client — DONE
+
+Location: /home/vunloon/dev/test2/xiaozhi-android/
+
+Verified working on Android 14 emulator
+- App installs and launches without crashing
+- Native libopus.so + libopus_jni.so load successfully for all 3 ABIs
+- OTA handshake to api.tenclass.net returns 200 with a real verification code
+- Activation screen renders the code (e.g. 907133), instructions, copy button, and "Open xiaozhi.me" link
+- Activation polling loop fires /ota/activate every 5 s (got HTTP 202 "waiting for user")
+- Screenshot: xiaozhi-android/docs/activation-screen.png
+
+Two bugs found and fixed via the smoke test
+1. SONAME missing on libopus.so → JNI's NEEDED entry baked the absolute build path. Fixed by adding -Wl,-soname,libopus.so in scripts/build-libopus.sh.
+2. OtaResponse.server_time typed as String? but the server returns an object ({timestamp, timezone_offset}). Changed to JsonElement?.
+
+Deliverables
+Artifact
+Debug APK (20.8 MB)
+Release APK (14.4 MB, R8-minified, unsigned)
+Kotlin source (28 files)
+JNI bridge
+Prebuilt libopus 1.5.2 (3 ABIs)
+Build script (idempotent)
+Unit tests (9 tests, all pass)
+
+README
+Screenshot
+What still needs a real device + account
+- User enters the 6-digit code at xiaozhi.me → activation confirmed → app auto-advances to chat
+- Push-to-talk voice round-trip (mic capture → Opus → WSS → TTS Opus → playback)
+Both require a real xiaozhi account — the code path is in place and the wire format is verified against the live server.
+
+To install on a phone:
+adb install -r xiaozhi-android/app/build/outputs/apk/debug/app-debug.apk
+
+
+
+The toolchain (JDK 17, Android SDK, NDK, CMake, emulator + xiaozhi_test AVD) is already installed on this machine, so you just run:
+
+Quick path (one script does everything)
+cd /home/vunloon/dev/test2/xiaozhi-android
+./scripts/emulator.sh start      # boot the headless emulator (~12s)
+./scripts/emulator.sh run        # build + install + launch
+./scripts/emulator.sh logcat     # tail logs (Ctrl-C to stop)
+./scripts/emulator.sh screenshot # save /tmp/xiaozhi-screen.png
+
+Step-by-step (manual)
+
+# 1. Boot emulator (headless, x86_64, Android 14)
+source ~/.android-env
+nohup $ANDROID_HOME/emulator/emulator -avd xiaozhi_test \
+    -no-window -no-audio -gpu swiftshader_indirect -no-snapshot \
+    > /tmp/emulator.log 2>&1 &
+
+# 2. Wait for boot
+adb wait-for-device
+until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; do sleep 2; done
+
+# 3. Install + launch
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell pm grant com.xiaozhi.client.debug android.permission.RECORD_AUDIO
+adb shell am start -n com.xiaozhi.client.debug/com.xiaozhi.client.MainActivity
+
+# 4. Watch logs
+adb logcat -s OpusCodec:I ActivationManager:V okhttp.OkHttpClient:I WebSocketProtocol:V AndroidRuntime:E
+
+# 5. Screenshot to view UI
+adb exec-out screencap -p > screen.png
+
+# 6. Stop
+adb emu kill
+What to look for in logcat
+Sign
+I OpusCodec: Native opus + opus_jni loaded
+I okhttp.OkHttpClient: --> POST https://api.tenclass.net/xiaozhi/ota/
+I okhttp.OkHttpClient: <-- 200 https://api.tenclass.net/xiaozhi/ota/
+I okhttp.OkHttpClient: --> POST .../ota/activate (every 5 s)
+E OpusCodec: Failed to load native opus libs
+Notes
+- Emulator is headless (no GUI window). Use screencap + uiautomator dump to inspect UI.
+- If you want a windowed emulator, drop -no-window from the start command (needs a display).
+- The emulator can't actually capture audio meaningfully for voice chat — for end-to-end voice testing, install on a real phone via adb -d install -r app/build/outputs/apk/debug/app-debug.apk after enabling USB debugging.
+
+
+
+

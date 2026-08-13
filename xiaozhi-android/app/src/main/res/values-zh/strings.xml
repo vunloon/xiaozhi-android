@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">小智</string>
+
+    <!-- Activation -->
+    <string name="activation_title">设备激活</string>
+    <string name="activation_code_label">验证码</string>
+    <string name="activation_instructions">请在浏览器中访问 xiaozhi.me，在账户下添加新设备时输入上方验证码。</string>
+    <string name="activation_open_site">打开 xiaozhi.me</string>
+    <string name="activation_waiting">等待用户输入验证码…</string>
+    <string name="activation_success">设备激活成功</string>
+    <string name="activation_failed">激活失败：%1$s</string>
+    <string name="activation_retry">重试</string>
+    <string name="activation_copy_code">复制验证码</string>
+    <string name="activation_code_copied">验证码已复制到剪贴板</string>
+
+    <!-- Chat -->
+    <string name="chat_ptt_hint">按住说话</string>
+    <string name="chat_listening">聆听中…</string>
+    <string name="chat_speaking">播报中…</string>
+    <string name="chat_connecting">连接中…</string>
+    <string name="chat_disconnected">已断开</string>
+    <string name="chat_you">你</string>
+    <string name="chat_assistant">小智</string>
+
+    <!-- Tool drawer -->
+    <string name="tool_drawer_title">工具调用</string>
+    <string name="tool_drawer_empty">暂无工具调用</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_disconnect">断开连接</string>
+    <string name="settings_reconnect">重新连接</string>
+    <string name="settings_about">关于</string>
+
+    <!-- Service -->
+    <string name="service_notification_title">小智正在运行</string>
+    <string name="service_notification_text">点按返回应用</string>
+    <string name="service_notification_listening">聆听中</string>
+    <string name="service_notification_speaking">播报中</string>
+
+    <!-- Permissions -->
+    <string name="permission_mic_title">需要麦克风权限</string>
+    <string name="permission_mic_rationale">小智需要麦克风权限才能与你对话。请在下一步授权。</string>
+    <string name="permission_mic_open_settings">打开设置</string>
+    <string name="permission_grant">授权</string>
+
+    <!-- Errors -->
+    <string name="error_network">网络错误：%1$s</string>
+    <string name="error_activation">激活错误：%1$s</string>
+    <string name="error_connection_failed">连接失败：%1$s</string>
+</resources>
