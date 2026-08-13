@@ -20,6 +20,7 @@
     <string name="chat_speaking">Speaking…</string>
     <string name="chat_connecting">Connecting…</string>
     <string name="chat_disconnected">Disconnected</string>
+    <string name="chat_online">Online</string>
     <string name="chat_you">You</string>
     <string name="chat_assistant">Xiaozhi</string>
 

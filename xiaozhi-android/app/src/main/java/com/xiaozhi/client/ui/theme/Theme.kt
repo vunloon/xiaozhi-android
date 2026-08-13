@@ -7,6 +7,16 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
+// Cute Soft Blue Theme Colors
+val PastelBlueBg = Color(0xFFE8F1F5)       // Soft background
+val CloudWhite = Color(0xFFFFFFFF)         // Input field background
+val PastelBlueBubble = Color(0xFFD0E8F2)   // Incoming message bubble
+val ReceivedBubble = Color(0xFFE2E8F0)     // Incoming message bubble (light)
+val SentBubble = Color(0xFFC7D2FE)         // Sent message bubble (periwinkle)
+val DeepBlueText = Color(0xFF2C3E50)       // Readable text color
+val HeartAccentBlue = Color(0xFF5390D9)    // Icons & active buttons
+val TopBarBlue = Color(0xFFD6E6F2)         // Top bar / input bar background
+
 private val BrandPrimary = Color(0xFF3B6FE6)
 private val BrandPrimaryDark = Color(0xFF1F3F8F)
 private val BrandSecondary = Color(0xFFFF6B35)
@@ -31,25 +41,32 @@ private val DarkColors = darkColorScheme(
 )
 
 private val LightColors = lightColorScheme(
-    primary = BrandPrimary,
+    primary = HeartAccentBlue,
     onPrimary = Color.White,
-    primaryContainer = BrandPrimaryDark,
-    onPrimaryContainer = Color.White,
-    secondary = BrandSecondary,
+    primaryContainer = SentBubble,
+    onPrimaryContainer = DeepBlueText,
+    secondary = Color(0xFF8FAAD8),
     onSecondary = Color.White,
-    background = BrandBackgroundLight,
-    onBackground = Color(0xFF111522),
-    surface = BrandSurfaceLight,
-    onSurface = Color(0xFF111522),
+    secondaryContainer = PastelBlueBubble,
+    onSecondaryContainer = DeepBlueText,
+    tertiary = Color(0xFF4CAF50),
+    onTertiary = Color.White,
+    background = PastelBlueBg,
+    onBackground = DeepBlueText,
+    surface = CloudWhite,
+    onSurface = DeepBlueText,
+    surfaceVariant = ReceivedBubble,
+    onSurfaceVariant = Color(0xFF5B6B7C),
 )
 
 @Composable
 fun XiaozhiTheme(
-    darkTheme: Boolean = true,
+    darkTheme: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    // Force dark palette — the app is designed for low-light voice-chat usage.
-    val colors = if (darkTheme) DarkColors else LightColors
+    // Default to the pastel-blue light palette. Pass darkTheme = true to keep
+    // the original low-light voice-chat palette.
+    val colors = if (darkTheme || isSystemInDarkTheme()) DarkColors else LightColors
     MaterialTheme(
         colorScheme = colors,
         typography = MaterialTheme.typography,
