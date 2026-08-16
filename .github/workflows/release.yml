@@ -37,10 +37,13 @@ jobs:
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --no-daemon
 
+      - name: Copy APK to release name
+        run: cp app/build/outputs/apk/release/app-release-unsigned.apk "$GITHUB_WORKSPACE/xiaozhi-android.apk"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: xiaozhi-android/app/build/outputs/apk/release/app-release-unsigned.apk
+          files: xiaozhi-android.apk
           generate_release_notes: true
