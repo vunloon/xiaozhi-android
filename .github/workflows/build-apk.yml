@@ -1,0 +1,51 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xiaozhi-android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK + CMake
+        run: |
+          sdkmanager --install "ndk;26.3.11579264" "cmake;3.22.1"
+        # libopus.so is prebuilt/committed, but AGP's externalNativeBuild
+        # requires NDK + CMake to be present to configure the JNI wrapper.
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Build unsigned release APK
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: xiaozhi-android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned
+          path: xiaozhi-android/app/build/outputs/apk/release/app-release-unsigned.apk
