@@ -42,5 +42,5 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: app/build/outputs/apk/release/app-release-unsigned.apk
+          files: xiaozhi-android/app/build/outputs/apk/release/app-release-unsigned.apk
           generate_release_notes: true
