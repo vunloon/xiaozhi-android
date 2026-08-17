@@ -52,6 +52,24 @@ android {
                 "proguard-rules.pro"
             )
             buildConfigField("boolean", "TRUST_ALL_CERTS", "false")
+
+            // Sign the release APK when a keystore is provided via env vars
+            // (set from GitHub secrets in CI). Locally, unset vars produce an
+            // unsigned APK so plain `assembleRelease` keeps working.
+            val ksFile = System.getenv("KEYSTORE_FILE")
+            val ksPass = System.getenv("KEYSTORE_PASSWORD")
+            val alias = System.getenv("KEY_ALIAS")
+            val kp = System.getenv("KEY_PASSWORD")
+            if (!ksFile.isNullOrBlank() && !ksPass.isNullOrBlank() &&
+                !alias.isNullOrBlank() && !kp.isNullOrBlank()
+            ) {
+                signingConfig = signingConfigs.create("release") {
+                    storeFile = file(ksFile)
+                    storePassword = ksPass
+                    keyAlias = alias
+                    keyPassword = kp
+                }
+            }
         }
     }
 

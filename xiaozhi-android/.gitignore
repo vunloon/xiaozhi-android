@@ -27,5 +27,9 @@ local.properties
 *.log
 captures/
 
+# Signing — never commit the keystore or passwords
+*.keystore
+*.jks
+
 # OS
 .DS_Store
