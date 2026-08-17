@@ -35,7 +35,7 @@ jobs:
           if [[ -z "$KEYSTORE_B64" ]]; then
             echo "::warning::ANDROID_KEYSTORE_BASE64 secret not set — releasing an UNSIGNED APK"
           else
-            echo "$KEYSTORE_B64" | base64 -d > "$GITHUB_WORKSPACE/xiaozhi-release.keystore"
+            echo "$KEYSTORE_B64" | base64 -d > "$GITHUB_WORKSPACE/xiaozhi-release2.keystore"
           fi
 
       - name: Install NDK + CMake
@@ -47,7 +47,7 @@ jobs:
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --no-daemon
         env:
-          KEYSTORE_FILE: ${{ github.workspace }}/xiaozhi-release.keystore
+          KEYSTORE_FILE: ${{ github.workspace }}/xiaozhi-release2.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}

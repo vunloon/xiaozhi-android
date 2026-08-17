@@ -64,7 +64,7 @@ android {
                 !alias.isNullOrBlank() && !kp.isNullOrBlank()
             ) {
                 signingConfig = signingConfigs.create("release") {
-                    storeFile = file(ksFile)
+                    storeFile = rootProject.file(ksFile)
                     storePassword = ksPass
                     keyAlias = alias
                     keyPassword = kp
