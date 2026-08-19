@@ -50,9 +50,10 @@ To rebuild from source (e.g. to bump the Opus version), see
 ./gradlew :app:assembleDebug
 # -> app/build/outputs/apk/debug/app-debug.apk
 
-# Release APK (runs R8; unsigned — bring your own keystore to sign)
-./gradlew :app:assembleRelease
-# -> app/build/outputs/apk/release/app-release-unsigned.apk
+# Release APK (runs R8; always signed — build FAILS if signing vars are unset)
+# Signing config: KEYSTORE_FILE defaults to xiaozhi-release2.keystore in this dir.
+KEYSTORE_PASSWORD=... KEY_ALIAS=... KEY_PASSWORD=... ./gradlew :app:assembleRelease
+# -> app/build/outputs/apk/release/app-release.apk (verified signed)
 
 # Unit tests
 ./gradlew :app:testDebugUnitTest

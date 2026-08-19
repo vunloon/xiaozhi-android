@@ -39,6 +39,17 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val ksFile = System.getenv("KEYSTORE_FILE")
+                ?: rootProject.file("xiaozhi-release2.keystore").path
+            storeFile = rootProject.file(ksFile)
+            storePassword = System.getenv("KEYSTORE_PASSWORD").orEmpty()
+            keyAlias = System.getenv("KEY_ALIAS").orEmpty()
+            keyPassword = System.getenv("KEY_PASSWORD").orEmpty()
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -53,23 +64,8 @@ android {
             )
             buildConfigField("boolean", "TRUST_ALL_CERTS", "false")
 
-            // Sign the release APK when a keystore is provided via env vars
-            // (set from GitHub secrets in CI). Locally, unset vars produce an
-            // unsigned APK so plain `assembleRelease` keeps working.
-            val ksFile = System.getenv("KEYSTORE_FILE")
-            val ksPass = System.getenv("KEYSTORE_PASSWORD")
-            val alias = System.getenv("KEY_ALIAS")
-            val kp = System.getenv("KEY_PASSWORD")
-            if (!ksFile.isNullOrBlank() && !ksPass.isNullOrBlank() &&
-                !alias.isNullOrBlank() && !kp.isNullOrBlank()
-            ) {
-                signingConfig = signingConfigs.create("release") {
-                    storeFile = rootProject.file(ksFile)
-                    storePassword = ksPass
-                    keyAlias = alias
-                    keyPassword = kp
-                }
-            }
+            // Release builds are ALWAYS signed. Refuse to produce an unsigned APK.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -174,3 +170,24 @@ tasks.withType<KotlinCompile>().configureEach {
         jvmTarget = "17"
     }
 }
+
+// Release builds must never produce an unsigned APK. Fail fast if the signing
+// credentials are missing instead of emitting an uninstallable artifact.
+val releaseSigningGuard: (Task) -> Unit = { task ->
+    if (task.name.contains("Release")) {
+        task.doFirst {
+            val missing = listOf(
+                "KEYSTORE_PASSWORD" to System.getenv("KEYSTORE_PASSWORD"),
+                "KEY_ALIAS" to System.getenv("KEY_ALIAS"),
+                "KEY_PASSWORD" to System.getenv("KEY_PASSWORD"),
+            ).filter { it.second.isNullOrBlank() }.joinToString { it.first }
+            check(missing.isEmpty()) {
+                "Release signing config is incomplete — missing env var(s): $missing. " +
+                    "Refusing to build an unsigned APK. Set KEYSTORE_PASSWORD, KEY_ALIAS and " +
+                    "KEY_PASSWORD (KEYSTORE_FILE defaults to xiaozhi-release2.keystore)."
+            }
+        }
+    }
+}
+tasks.configureEach { releaseSigningGuard(this) }
+tasks.whenTaskAdded { releaseSigningGuard(this) }

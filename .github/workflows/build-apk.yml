@@ -9,6 +9,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
     defaults:
       run:
         working-directory: xiaozhi-android
@@ -32,10 +37,17 @@ jobs:
         # libopus.so is prebuilt/committed, but AGP's externalNativeBuild
         # requires NDK + CMake to be present to configure the JNI wrapper.
 
+      - name: Decode signing keystore
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/xiaozhi-release2.keystore"
+          echo "KEYSTORE_FILE=$GITHUB_WORKSPACE/xiaozhi-release2.keystore" >> "$GITHUB_ENV"
+
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
 
-      - name: Build unsigned release APK
+      - name: Build signed release APK
+        if: env.KEYSTORE_PASSWORD != ''
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Upload debug APK
@@ -44,8 +56,9 @@ jobs:
           name: app-debug
           path: xiaozhi-android/app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload unsigned release APK
+      - name: Upload signed release APK
+        if: env.KEYSTORE_PASSWORD != ''
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-unsigned
-          path: xiaozhi-android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: app-release
+          path: xiaozhi-android/app/build/outputs/apk/release/app-release.apk
