@@ -51,6 +51,21 @@ want_audio() {
     [[ "${AUDIO:-1}" == "1" ]]
 }
 
+# GPU=host (default in headless) uses the host GPU (fast; needs a working
+# /dev/dri). Windowed mode defaults to swiftshader_indirect because -gpu host
+# crashes the Qt window on some Linux hosts (MANGOHUD/X issue). Override with
+# GPU=swiftshader_indirect|host to force either.
+pick_gpu() {
+    if [[ -n "${GPU:-}" ]]; then echo "$GPU"; return; fi
+    if want_window; then echo "swiftshader_indirect"; else echo "host"; fi
+}
+
+# SNAPSHOT=1 (default) enables quickboot snapshots (much faster start/resume).
+# Set SNAPSHOT=0 to force cold boots (fresh state every time).
+want_snapshot() {
+    [[ "${SNAPSHOT:-1}" == "1" ]]
+}
+
 adb_wait_boot() {
     local serial="$1"
     echo "Waiting for $serial to finish booting…"
@@ -94,9 +109,24 @@ ensure_emulator_up() {
             echo "  (audio off — AUDIO=0 set; no host sound)"
             audio_args+=(-no-audio)
         fi
-        nohup "$EMULATOR" -avd "$AVD_NAME" \
+                local gpu="$(pick_gpu)"
+        echo "  (gpu=$gpu — GPU=swiftshader_indirect|host to force)"
+        local snapshot_args=()
+        if want_snapshot; then
+            echo "  (snapshots on — set SNAPSHOT=0 to force cold boot)"
+        else
+            echo "  (snapshots off — SNAPSHOT=0 set; cold boot)"
+            snapshot_args+=(-no-snapshot)
+        fi
+        # MangoHud / vkBasalt are installed as global implicit Vulkan layers on
+        # this host (/etc/environment sets MANGOHUD=1). They inject into the
+        # emulator's host GL renderer and cause intermittent segfaults ("Close
+        # window" dialogs), so strip them from the emulator's environment.
+        nohup env -u MANGOHUD -u ENABLE_VKBASALT \
+            "$EMULATOR" -avd "$AVD_NAME" \
             -no-boot-anim \
-            -gpu swiftshader_indirect -no-snapshot \
+            -gpu "$gpu" \
+            "${snapshot_args[@]}" \
             "${audio_args[@]}" \
             "${window_args[@]}" \
             > /tmp/emulator.log 2>&1 &
@@ -180,6 +210,10 @@ phone too (USB debugging on, `adb devices` shows it).
 
 Environment overrides:
   AVD_NAME, SERIAL, ADB, EMULATOR, ANDROID_HOME
+  GPU=host|swiftshader_indirect   (default: host headless / swiftshader windowed)
+  SNAPSHOT=0                      (force cold boot instead of quickboot)
+  AUDIO=0                         (disable host audio)
+  WINDOW=0/1                      (force headless / windowed)
 USAGE
         ;;
 esac
