@@ -140,6 +140,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
+    // HTML parsing for the news/KLSE MCP tools
+    implementation("org.jsoup:jsoup:1.17.2")
+
     // Encrypted preferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 

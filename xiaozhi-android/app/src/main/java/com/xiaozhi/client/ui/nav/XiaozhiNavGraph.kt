@@ -12,10 +12,12 @@ import androidx.navigation.navArgument
 import com.xiaozhi.client.AppContainer
 import com.xiaozhi.client.ui.activation.ActivationScreen
 import com.xiaozhi.client.ui.chat.ChatScreen
+import com.xiaozhi.client.ui.settings.SettingsScreen
 
 object Routes {
     const val ACTIVATION = "activation"
     const val CHAT = "chat"
+    const val SETTINGS = "settings"
 }
 
 @Composable
@@ -48,7 +50,16 @@ fun XiaozhiNavGraph(
             )
         }
         composable(Routes.CHAT) {
-            ChatScreen(container = container)
+            ChatScreen(
+                container = container,
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+            )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                container = container,
+                onClose = { navController.popBackStack() },
+            )
         }
     }
 }

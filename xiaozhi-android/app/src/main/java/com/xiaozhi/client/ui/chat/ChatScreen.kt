@@ -3,9 +3,8 @@ package com.xiaozhi.client.ui.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,22 +26,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,34 +42,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xiaozhi.client.AppContainer
 import com.xiaozhi.client.R
+import com.xiaozhi.client.core.protocol.ListenMode
 import com.xiaozhi.client.core.protocol.WebSocketProtocol
 import com.xiaozhi.client.state.ChatStateMachine
-import com.xiaozhi.client.ui.components.PttButton
-import com.xiaozhi.client.ui.components.ToolActivityDrawer
-import com.xiaozhi.client.ui.theme.CloudWhite
-import com.xiaozhi.client.ui.theme.DeepBlueText
-import com.xiaozhi.client.ui.theme.HeartAccentBlue
-import com.xiaozhi.client.ui.theme.ReceivedBubble
-import com.xiaozhi.client.ui.theme.SentBubble
-import com.xiaozhi.client.ui.theme.TopBarBlue
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
+import com.xiaozhi.client.ui.components.ModeSwitch
+import com.xiaozhi.client.ui.components.MusicPlayerCard
+import com.xiaozhi.client.ui.components.TalkButton
+import com.xiaozhi.client.ui.theme.LocalXiaozhiPalette
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     container: AppContainer,
+    onOpenSettings: () -> Unit,
 ) {
     val vm: ChatViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
@@ -91,148 +78,139 @@ fun ChatScreen(
     val connectionState by vm.connectionState.collectAsStateWithLifecycle()
     val transcript by vm.transcript.collectAsStateWithLifecycle()
     val opusAvailable by vm.opusAvailable.collectAsStateWithLifecycle()
-    val drawerOpen by vm.toolDrawerOpen.collectAsStateWithLifecycle()
+    val mode by vm.listeningMode.collectAsStateWithLifecycle()
+    val sessionActive by vm.sessionActive.collectAsStateWithLifecycle()
+    val emotion by vm.emotion.collectAsStateWithLifecycle()
+    val micLevel by vm.micLevel.collectAsStateWithLifecycle()
 
     val listState = rememberLazyListState()
     LaunchedEffect(transcript.size) {
         if (transcript.isNotEmpty()) listState.animateScrollToItem(transcript.size - 1)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = CircleShape,
-                            color = Color(0xFFFFE0B2),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("🐻", fontSize = 22.sp)
-                            }
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = DeepBlueText,
-                                fontFamily = FontFamily.Default,
-                            )
-                            Text(
-                                text = statusText(connectionState),
-                                fontSize = 11.sp,
-                                color = statusColor(connectionState),
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { vm.reconnect() }) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Reconnect", tint = DeepBlueText)
-                    }
-                    IconButton(onClick = { vm.toggleToolDrawer() }) {
-                        Icon(Icons.Outlined.Build, contentDescription = stringResource(R.string.tool_drawer_title), tint = DeepBlueText)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = TopBarBlue,
-                ),
-            )
-        },
-        containerColor = PastelBlueBg,
-    ) { padding ->
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)) {
+    Column(modifier = Modifier
+        .fillMaxSize()
+        .imePadding()) {
+        TopBar(
+            connectionState = connectionState,
+            onConnect = { vm.connect() },
+            onDisconnect = { vm.reconnect() },
+            onOpenSettings = onOpenSettings,
+        )
 
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (!opusAvailable) OpusUnavailableBanner()
+        if (!opusAvailable) OpusUnavailableBanner()
 
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                ) {
-                    BackgroundImage()
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 12.dp),
-                        state = listState,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp),
-                    ) {
-                        if (transcript.isEmpty()) {
-                            item { EmptyConversation() }
-                        } else {
-                            items(transcript) { entry -> TranscriptBubble(entry) }
-                        }
-                    }
-                }
-
-                BottomBar(
-                    chatState = chatState,
-                    connectionState = connectionState,
-                    onTalkDown = { vm.startListening() },
-                    onTalkUp = { vm.stopListening() },
-                    onSendText = { text -> vm.sendText(text) },
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+        ) {
+            val palette = LocalXiaozhiPalette.current
+            palette.backgroundRes?.let { res ->
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(res),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
 
-            AnimatedVisibility(
-                visible = drawerOpen,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.TopEnd),
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 14.dp),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                ToolActivityDrawer(
-                    container = container,
-                    onClose = { vm.toggleToolDrawer() },
-                )
+                if (transcript.isEmpty()) {
+                    item { EmptyConversation() }
+                } else {
+                    items(transcript) { entry -> TranscriptBubble(entry) }
+                }
             }
+        }
+
+        val palette = LocalXiaozhiPalette.current
+        MusicPlayerCard(
+            accent = palette.accent,
+            text = palette.text,
+            dim = palette.dim,
+        )
+
+        BottomBar(
+            chatState = chatState,
+            connectionState = connectionState,
+            mode = mode,
+            sessionActive = sessionActive,
+            onModeChange = { vm.setMode(it) },
+            onTalkStart = { vm.startListening() },
+            onTalkEnd = {
+                if (mode == ListenMode.manual) vm.stopListening() else vm.endConversation()
+            },
+            onAbort = { vm.abort() },
+            onSendText = { text -> vm.sendText(text) },
+        )
+    }
+}
+
+@Composable
+private fun TopBar(
+    connectionState: WebSocketProtocol.ConnectionState,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val palette = LocalXiaozhiPalette.current
+    val connected = connectionState is WebSocketProtocol.ConnectionState.Connected
+    val connecting = connectionState is WebSocketProtocol.ConnectionState.Connecting
+    val dotColor = when {
+        connected -> palette.ok
+        connecting -> palette.warn
+        else -> Color(0xFF64748B)
+    }
+    val label = when {
+        connected -> stringResource(R.string.chat_online)
+        connecting -> stringResource(R.string.chat_connecting)
+        else -> stringResource(R.string.chat_disconnected)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(palette.panel)
+            .border(1.dp, palette.line, RoundedCornerShape(0.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(dotColor, CircleShape),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(text = label, fontSize = 12.sp, color = palette.dim)
+        Spacer(Modifier.weight(1f))
+        IconButton(
+            onClick = { if (connected) onDisconnect() else onConnect() },
+            modifier = Modifier.size(28.dp),
+        ) {
+            Text("⏻", fontSize = 15.sp, color = palette.dim)
+        }
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Text("⚙", fontSize = 15.sp, color = palette.dim)
         }
     }
 }
 
-private val PastelBlueBg = Color(0xFFE8F1F5)
-
-@Composable
-private fun BackgroundImage() {
-    androidx.compose.foundation.Image(
-        painter = androidx.compose.ui.res.painterResource(R.drawable.chat_background),
-        contentDescription = null,
-        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-        modifier = Modifier.fillMaxSize(),
-    )
-}
-
-@Composable
-private fun statusText(state: WebSocketProtocol.ConnectionState): String {
-    val ctx = LocalContext.current
-    return when (state) {
-        WebSocketProtocol.ConnectionState.Connected -> "● ${ctx.getString(R.string.chat_online)}"
-        WebSocketProtocol.ConnectionState.Connecting -> "● ${ctx.getString(R.string.chat_connecting)}"
-        WebSocketProtocol.ConnectionState.Disconnected -> "● ${ctx.getString(R.string.chat_disconnected)}"
-        is WebSocketProtocol.ConnectionState.Failed -> "✕ ${ctx.getString(R.string.chat_disconnected)}"
-    }
-}
-
-@Composable
-private fun statusColor(state: WebSocketProtocol.ConnectionState): Color = when (state) {
-    WebSocketProtocol.ConnectionState.Connected -> Color(0xFF4CAF50)
-    WebSocketProtocol.ConnectionState.Connecting -> Color(0xFF8FAAD8)
-    WebSocketProtocol.ConnectionState.Disconnected -> Color(0xFFB0BEC5)
-    is WebSocketProtocol.ConnectionState.Failed -> MaterialTheme.colorScheme.error
-}
-
 @Composable
 private fun OpusUnavailableBanner() {
+    val palette = LocalXiaozhiPalette.current
     Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
+        color = palette.danger.copy(alpha = 0.12f),
         modifier = Modifier
             .fillMaxWidth()
             .padding(12.dp),
@@ -241,7 +219,7 @@ private fun OpusUnavailableBanner() {
         Text(
             text = "Opus native library failed to load — voice unavailable.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onErrorContainer,
+            color = palette.danger,
             modifier = Modifier.padding(12.dp),
         )
     }
@@ -249,145 +227,71 @@ private fun OpusUnavailableBanner() {
 
 @Composable
 private fun EmptyConversation() {
+    val palette = LocalXiaozhiPalette.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 48.dp),
+            .padding(top = 32.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(
-                color = PastelBlueBubble,
-                shape = CircleShape,
-                modifier = Modifier.size(72.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Outlined.Mic,
-                        contentDescription = null,
-                        tint = HeartAccentBlue,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
             Text(
-                text = "🐻 Say hi to Xiaozhi!",
+                text = "Hold the mic button and talk, or type a message.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = DeepBlueText,
-                fontFamily = FontFamily.Default,
+                color = palette.dim,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.chat_ptt_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "Manual · push-to-talk  |  Auto · hands-free turns  |  Realtime · full duplex",
+                fontSize = 12.sp,
+                color = palette.dim,
+                textAlign = TextAlign.Center,
             )
         }
     }
 }
-
-private fun getCuteBubbleShape(isFromMe: Boolean) = if (isFromMe) {
-    RoundedCornerShape(
-        topStart = 20.dp,
-        topEnd = 6.dp,
-        bottomEnd = 20.dp,
-        bottomStart = 20.dp,
-    )
-} else {
-    RoundedCornerShape(
-        topStart = 6.dp,
-        topEnd = 20.dp,
-        bottomEnd = 20.dp,
-        bottomStart = 20.dp,
-    )
-}
-
-private val bubbleTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 
 @Composable
 private fun TranscriptBubble(entry: ChatStateMachine.TranscriptEntry) {
     val isUser = entry is ChatStateMachine.TranscriptEntry.User
-    val bubbleColor = if (isUser) SentBubble else ReceivedBubble
-    val time = remember(entry) { LocalTime.now().format(bubbleTimeFormat) }
-
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        if (isUser) {
-            Column(
-                horizontalAlignment = Alignment.End,
-                modifier = Modifier.weight(1f, fill = false),
-            ) {
-                Surface(
-                    color = bubbleColor,
-                    shape = getCuteBubbleShape(isFromMe = true),
-                    shadowElevation = 1.dp,
-                    modifier = Modifier.widthIn(max = 280.dp),
-                ) {
-                    Text(
-                        text = entry.text,
-                        color = DeepBlueText,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Default,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    )
-                }
-                Text(
-                    text = time,
-                    fontSize = 10.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 2.dp, end = 4.dp),
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Avatar("🐰")
-        } else {
-            Avatar("🐻")
-            Spacer(Modifier.width(8.dp))
-            Column(
-                horizontalAlignment = Alignment.Start,
-                modifier = Modifier.weight(1f, fill = false),
-            ) {
-                Surface(
-                    color = bubbleColor,
-                    shape = getCuteBubbleShape(isFromMe = false),
-                    shadowElevation = 1.dp,
-                    modifier = Modifier.widthIn(max = 280.dp),
-                ) {
-                    Text(
-                        text = entry.text,
-                        color = DeepBlueText,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Default,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    )
-                }
-                Text(
-                    text = time,
-                    fontSize = 10.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 2.dp, start = 4.dp),
-                )
-            }
-        }
+        ChatBubble(text = entry.text, isUser = isUser)
     }
 }
 
-private val PastelBlueBubble = Color(0xFFD0E8F2)
-
 @Composable
-private fun Avatar(emoji: String) {
+private fun ChatBubble(text: String, isUser: Boolean) {
+    val palette = LocalXiaozhiPalette.current
+    val shape = if (isUser) {
+        RoundedCornerShape(
+            topStart = 14.dp, topEnd = 14.dp,
+            bottomStart = 14.dp, bottomEnd = 4.dp,
+        )
+    } else {
+        RoundedCornerShape(
+            topStart = 14.dp, topEnd = 14.dp,
+            bottomStart = 4.dp, bottomEnd = 14.dp,
+        )
+    }
     Surface(
-        color = Color(0xFFFFE0B2),
-        shape = CircleShape,
-        modifier = Modifier.size(32.dp),
+        color = if (isUser) palette.userBubbleBg else palette.card,
+        shape = shape,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isUser) palette.userBubbleLine else palette.line,
+        ),
+        modifier = Modifier.widthIn(max = 300.dp),
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(emoji, fontSize = 16.sp)
-        }
+        Text(
+            text = text,
+            fontSize = 15.sp,
+            lineHeight = 21.sp,
+            color = palette.text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
     }
 }
 
@@ -395,118 +299,118 @@ private fun Avatar(emoji: String) {
 private fun BottomBar(
     chatState: ChatStateMachine.ChatState,
     connectionState: WebSocketProtocol.ConnectionState,
-    onTalkDown: () -> Unit,
-    onTalkUp: () -> Unit,
+    mode: ListenMode,
+    sessionActive: Boolean,
+    onModeChange: (ListenMode) -> Unit,
+    onTalkStart: () -> Unit,
+    onTalkEnd: () -> Unit,
+    onAbort: () -> Unit,
     onSendText: (String) -> Unit,
 ) {
+    val palette = LocalXiaozhiPalette.current
+    val connected = connectionState is WebSocketProtocol.ConnectionState.Connected
     val listening = chatState == ChatStateMachine.ChatState.LISTENING
     val speaking = chatState == ChatStateMachine.ChatState.SPEAKING
-    val connected = connectionState is WebSocketProtocol.ConnectionState.Connected
+    val talkActive = listening || (speaking && sessionActive && mode == ListenMode.realtime)
 
     var textInput by remember { mutableStateOf("") }
-    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    Surface(
-        color = TopBarBlue,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            StateLabel(listening = listening, speaking = speaking, connecting = !connected && connectionState is WebSocketProtocol.ConnectionState.Connecting)
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = textInput,
-                    onValueChange = { textInput = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = {
-                        Text(
-                            "Type a cute message… 💙",
-                            fontSize = 14.sp,
-                            color = Color.Gray,
-                        )
-                    },
-                    singleLine = true,
-                    enabled = connected,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CloudWhite,
-                        unfocusedContainerColor = CloudWhite,
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledContainerColor = CloudWhite.copy(alpha = 0.6f),
-                        disabledBorderColor = Color.Transparent,
-                    ),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = DeepBlueText),
-                )
-                Spacer(Modifier.width(8.dp))
-                FloatingActionButton(
-                    onClick = {
-                        if (textInput.isNotBlank()) {
-                            onSendText(textInput)
-                            textInput = ""
-                            keyboardController?.hide()
-                        }
-                    },
-                    containerColor = HeartAccentBlue,
-                    contentColor = Color.White,
-                    shape = CircleShape,
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .background(palette.panel)
+            .border(1.dp, palette.line, RoundedCornerShape(0.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ModeSwitch(mode = mode, onChange = onModeChange)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (speaking) {
+                IconButton(
+                    onClick = onAbort,
                     modifier = Modifier.size(44.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Favorite,
-                        contentDescription = "Send",
-                        modifier = Modifier.size(20.dp),
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(palette.danger.copy(alpha = 0.25f), CircleShape)
+                            .border(2.dp, palette.danger, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("⏹", fontSize = 14.sp, color = palette.danger)
+                    }
                 }
+                Spacer(Modifier.width(12.dp))
             }
-
-            Spacer(Modifier.height(8.dp))
-            PttButton(
-                active = listening,
+            TalkButton(
+                mode = mode,
+                listening = talkActive,
+                speaking = speaking,
                 enabled = connected,
-                onPress = onTalkDown,
-                onRelease = onTalkUp,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.chat_ptt_hint),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.alpha(0.7f),
+                onTalkStart = onTalkStart,
+                onTalkEnd = onTalkEnd,
             )
         }
-    }
-}
 
-@Composable
-private fun StateLabel(listening: Boolean, speaking: Boolean, connecting: Boolean) {
-    val text = when {
-        listening -> stringResource(R.string.chat_listening)
-        speaking -> stringResource(R.string.chat_speaking)
-        connecting -> stringResource(R.string.chat_connecting)
-        else -> ""
-    }
-    if (text.isBlank()) return
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (listening || connecting) {
-            CircularProgressIndicator(
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(14.dp),
-                color = MaterialTheme.colorScheme.secondary,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = textInput,
+                onValueChange = { textInput = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp),
+                placeholder = {
+                    Text("Type a message…", fontSize = 14.sp, color = palette.dim)
+                },
+                singleLine = true,
+                enabled = connected,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = palette.card,
+                    unfocusedContainerColor = palette.card,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    disabledContainerColor = palette.card.copy(alpha = 0.6f),
+                    disabledBorderColor = Color.Transparent,
+                ),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.text, fontSize = 14.sp),
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
+            androidx.compose.material3.Button(
+                onClick = {
+                    val t = textInput.trim()
+                    if (t.isNotEmpty()) {
+                        onSendText(t)
+                        textInput = ""
+                        keyboardController?.hide()
+                    }
+                },
+                modifier = Modifier
+                    .height(44.dp)
+                    .width(44.dp),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(0.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = palette.accent,
+                    contentColor = palette.bg,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Send,
+                    contentDescription = "Send",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.secondary,
-        )
     }
 }

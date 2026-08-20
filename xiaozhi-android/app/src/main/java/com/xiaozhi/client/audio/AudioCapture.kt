@@ -10,8 +10,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -41,6 +44,10 @@ class AudioCapture(
         extraBufferCapacity = 64,
     )
     val frames: SharedFlow<ByteArray> = _frames.asSharedFlow()
+
+    /** Normalized mic level (0..1 RMS) for the UI orb. Updated per frame. */
+    private val _level = MutableStateFlow(0f)
+    val level: StateFlow<Float> = _level.asStateFlow()
 
     private val frameSize: Int = (sampleRate * frameDurationMs / 1000) * channels
     private val pcmBuffer = ShortArray(frameSize)
@@ -117,11 +124,14 @@ class AudioCapture(
                 val n = encoder.encode(pcmBuffer, read, outBuf)
                 if (n > 0) {
                     var peak = 0
+                    var sumSq = 0L
                     for (i in 0 until read) {
                         val v = pcmBuffer[i].toInt()
                         if (v < 0) { kotlin.math.abs(v).let { if (it > peak) peak = it } }
                         else if (v > peak) peak = v
+                        sumSq += v.toLong() * v.toLong()
                     }
+                    _level.value = ((sumSq / read).toDouble().let { kotlin.math.sqrt(it) } / 32768.0).toFloat().coerceIn(0f, 1f)
                     if (peak > 200) Log.d(TAG, "pcm peak=$peak frame=$framesEncoded packet=${n}B")
                     val packet = if (n == outBuf.size) outBuf.copyOf() else outBuf.copyOf(n)
                     // tryEmit to avoid blocking the audio thread — drop if buffer is full
@@ -140,6 +150,7 @@ class AudioCapture(
     /** Stop capturing and release the mic. Safe to call repeatedly. */
     suspend fun stop() {
         isActive = false
+        _level.value = 0f
         captureJob?.cancelAndJoin()
         captureJob = null
         record?.run {
