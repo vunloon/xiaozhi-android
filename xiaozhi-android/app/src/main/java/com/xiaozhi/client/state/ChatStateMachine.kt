@@ -18,15 +18,17 @@ import kotlinx.coroutines.launch
  * Drives the IDLE ⇄ LISTENING ⇄ SPEAKING state machine and binds the audio
  * pipeline to the WebSocket.
  *
- * Mirrors `py-xiaozhi/src/application.py` `Application` (states `IDLE`,
- * `CONNECTING`, `LISTENING`, `SPEAKING`) but with a manual push-to-talk
- * trigger only — wake-word is a phase-4 add.
+ * Supports the three listening modes of the browser client (`protocol.ts`):
+ *  - MANUAL: push-to-talk — hold to listen, release to send.
+ *  - AUTO:   tap to start a hands-free turn; the conversation keeps itself
+ *            alive (the app re-issues `listen start` after the assistant
+ *            finishes speaking) until the user taps stop.
+ *  - REALTIME: full-duplex — the mic stays live even while the assistant is
+ *            speaking so the user can interrupt at any moment.
  *
- * Responsibilities:
- *   - Start/stop [AudioCapture] when entering/leaving LISTENING.
- *   - Start/stop [AudioPlayer] on TTS start/stop messages.
- *   - Forward Opus frames from [AudioCapture] to [WebSocketProtocol.sendAudio].
- *   - Surface a [transcript] flow for the UI (user + assistant bubbles).
+ * The `sessionActive` flag mirrors the web's conversation liveness. Audio is
+ * captured whenever [shouldCapture] holds: LISTENING, or SPEAKING in realtime
+ * mode.
  */
 class ChatStateMachine(
     private val protocol: WebSocketProtocol,
@@ -36,12 +38,25 @@ class ChatStateMachine(
     private val _state = MutableStateFlow(ChatState.IDLE)
     val state: StateFlow<ChatState> = _state.asStateFlow()
 
+    private val _listeningMode = MutableStateFlow(ListenMode.manual)
+    val listeningMode: StateFlow<ListenMode> = _listeningMode.asStateFlow()
+
+    private val _sessionActive = MutableStateFlow(false)
+    val sessionActive: StateFlow<Boolean> = _sessionActive.asStateFlow()
+
+    private val _emotion = MutableStateFlow("neutral")
+    val emotion: StateFlow<String> = _emotion.asStateFlow()
+
     private val _transcript = MutableStateFlow<List<TranscriptEntry>>(emptyList())
     val transcript: StateFlow<List<TranscriptEntry>> = _transcript.asStateFlow()
+
+    private val _micLevel = MutableStateFlow(0f)
+    val micLevel: StateFlow<Float> = _micLevel.asStateFlow()
 
     private var capture: AudioCapture? = null
     private var player: AudioPlayer? = null
     private var framePipeJob: Job? = null
+    private var micLevelJob: Job? = null
     private var protocolEventJob: Job? = null
 
     /** Begin observing the protocol. Idempotent. */
@@ -49,31 +64,93 @@ class ChatStateMachine(
         if (protocolEventJob?.isActive == true) return
         ensurePipeline()
         protocolEventJob = scope.launch {
+            // Mirror the web's onClosed: a lost socket ends any active session
+            // (the server forgets the listen state across reconnects, so a
+            // stale LISTENING would silently stop recording forever).
+            launch {
+                protocol.state.collect { s ->
+                    if (s is WebSocketProtocol.ConnectionState.Disconnected ||
+                        s is WebSocketProtocol.ConnectionState.Failed
+                    ) {
+                        if (_state.value != ChatState.IDLE || _sessionActive.value) {
+                            Log.i(TAG, "connection lost — resetting session state")
+                            _state.value = ChatState.IDLE
+                            _sessionActive.value = false
+                            stopPlayback()
+                            stopCapture()
+                        }
+                    }
+                }
+            }
             protocol.events.collectLatest { ev -> handleEvent(ev) }
         }
     }
 
-    /** Push-to-talk: starts a manual listen turn. */
-    fun startListening() {        val s = _state.value
+    fun setMode(mode: ListenMode) {
+        if (_listeningMode.value == mode) return
+        Log.i(TAG, "setMode -> $mode")
+        // Switching modes mid-conversation: manual is a one-shot turn, so if we
+        // were in an active auto/realtime session, end it.
+        if (mode == ListenMode.manual && _sessionActive.value) {
+            endConversation()
+        }
+        _listeningMode.value = mode
+    }
+
+    /** Start a listen turn. In manual mode this is push-to-talk; in auto/
+     *  realtime it opens a hands-free session. */
+    fun startListening(mode: ListenMode? = null) {
+        val m = mode ?: _listeningMode.value
+        if (m != ListenMode.manual) _sessionActive.value = true
+        _listeningMode.value = m
+        val s = _state.value
         if (s == ChatState.LISTENING) return
-        Log.i(TAG, "startListening (from $s)")
-        // If we're currently speaking, abort the TTS first.
+        Log.i(TAG, "startListening ($m) from $s")
         if (s == ChatState.SPEAKING) {
             protocol.sendAbort()
             stopPlayback()
         }
         _state.value = ChatState.LISTENING
-        protocol.sendStartListening(mode = ListenMode.manual)
+        protocol.sendStartListening(mode = m)
         startCapture()
     }
 
-    /** Push-to-talk release: ends the listen turn. */
+    /** Push-to-talk release: ends the manual listen turn. */
     fun stopListening() {
         if (_state.value != ChatState.LISTENING) return
         Log.i(TAG, "stopListening")
         _state.value = ChatState.IDLE
+        _sessionActive.value = false
         protocol.sendStopListening()
         scope.launch { stopCapture() }
+    }
+
+    /** Ends a hands-free (auto/realtime) conversation. Web parity: only a
+     *  `listen stop` is sent — no abort (the server ends the session cleanly). */
+    fun endConversation() {
+        if (!_sessionActive.value && _state.value != ChatState.LISTENING) return
+        Log.i(TAG, "endConversation")
+        _sessionActive.value = false
+        protocol.sendStopListening()
+        stopPlayback()
+        _state.value = ChatState.IDLE
+        scope.launch { stopCapture() }
+    }
+
+    /** Interrupt the assistant. Keeps the session alive in auto/realtime:
+     *  the mic simply resumes streaming and the server's VAD picks up the
+     *  next utterance (web parity — no `listen start` re-send here). */
+    fun abort() {
+        Log.i(TAG, "abort")
+        protocol.sendAbort()
+        stopPlayback()
+        if (_sessionActive.value) {
+            _state.value = ChatState.LISTENING
+            startCapture()
+        } else {
+            _state.value = ChatState.IDLE
+            scope.launch { stopCapture() }
+        }
     }
 
     /**
@@ -94,6 +171,8 @@ class ChatStateMachine(
     fun shutdown() {
         framePipeJob?.cancel()
         framePipeJob = null
+        micLevelJob?.cancel()
+        micLevelJob = null
         protocolEventJob?.cancel()
         protocolEventJob = null
         scope.launch {
@@ -101,6 +180,7 @@ class ChatStateMachine(
             stopPlayback()
         }
         _state.value = ChatState.IDLE
+        _sessionActive.value = false
     }
 
     // ------------------------------------------------------------------------
@@ -118,10 +198,24 @@ class ChatStateMachine(
                 _state.value = ChatState.SPEAKING
                 startPlayback()
                 ev.text?.takeIf { it.isNotBlank() }?.let { addAssistant(it) }
+                // Realtime: keep the mic live during the reply so the user can
+                // barge in at any moment. Other modes pause capture.
+                if (!shouldCapture()) scope.launch { stopCapture() }
             }
             WebSocketProtocol.ServerEvent.TtsStop -> {
                 stopPlayback()
-                if (_state.value == ChatState.SPEAKING) _state.value = ChatState.IDLE
+                when {
+                    _sessionActive.value -> {
+                        // Hands-free session: go back to listening. The web
+                        // re-issues listen start unless realtime mic is live.
+                        _state.value = ChatState.LISTENING
+                        if (_listeningMode.value != ListenMode.realtime || capture?.isActive != true) {
+                            protocol.sendStartListening(mode = _listeningMode.value)
+                        }
+                        startCapture()
+                    }
+                    _state.value == ChatState.SPEAKING -> _state.value = ChatState.IDLE
+                }
             }
             is WebSocketProtocol.ServerEvent.Stt -> {
                 // The server echoes back the exact text we sent in text mode,
@@ -133,11 +227,16 @@ class ChatStateMachine(
                     addUser(ev.text)
                 }
             }
-            is WebSocketProtocol.ServerEvent.Llm -> Unit
+            is WebSocketProtocol.ServerEvent.Llm -> {
+                ev.emotion?.takeIf { it.isNotBlank() }?.let { _emotion.value = it }
+            }
             is WebSocketProtocol.ServerEvent.Hello -> Unit
             is WebSocketProtocol.ServerEvent.Mcp -> Unit
             is WebSocketProtocol.ServerEvent.IotCommands -> Unit
-            WebSocketProtocol.ServerEvent.Goodbye -> _state.value = ChatState.IDLE
+            WebSocketProtocol.ServerEvent.Goodbye -> {
+                _state.value = ChatState.IDLE
+                _sessionActive.value = false
+            }
             is WebSocketProtocol.ServerEvent.AudioFrame -> Unit
             is WebSocketProtocol.ServerEvent.TtsSentenceStart -> {
                 // api.tenclass.net sends the assistant's spoken text on
@@ -150,6 +249,11 @@ class ChatStateMachine(
         }
     }
 
+    /** Whether the mic should be capturing right now. */
+    private fun shouldCapture(): Boolean =
+        _state.value == ChatState.LISTENING ||
+            (_state.value == ChatState.SPEAKING && _sessionActive.value && _listeningMode.value == ListenMode.realtime)
+
     private fun ensurePipeline() {
         if (player == null) {
             player = AudioPlayer(scope = scope).also { protocol.attachPlayer(it) }
@@ -160,6 +264,9 @@ class ChatStateMachine(
                     cap.frames.collectLatest { packet ->
                         protocol.sendAudio(packet)
                     }
+                }
+                micLevelJob = scope.launch {
+                    cap.level.collectLatest { _micLevel.value = it }
                 }
             }
         }

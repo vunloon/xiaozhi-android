@@ -104,6 +104,40 @@ class EfuseStore(private val context: Context) {
         )
     }
 
+    /**
+     * Serializes the device identity in the same shape the web client uses
+     * (`{mac, clientId, serialNumber, hmacKey}`) so a linked device can be
+     * moved between the browser, the phone, and py-xiaozhi configs.
+     */
+    fun exportJson(): String {
+        val id = ensureIdentity()
+        return "{\"mac\":\"${id.mac}\",\"clientId\":\"${id.clientId}\"," +
+            "\"serialNumber\":\"${id.serial}\",\"hmacKey\":\"${id.hmac}\",\"activated\":${id.activated}}"
+    }
+
+    /**
+     * Restores an identity exported by [exportJson] (or hand-built from a
+     * py-xiaozhi config). Returns true on success. Fails if any required key
+     * is missing or empty.
+     */
+    @Synchronized
+    fun importJson(raw: String): Boolean {
+        val obj = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: return false
+        val mac = obj.optString("mac").takeIf { it.isNotBlank() } ?: return false
+        val clientId = obj.optString("clientId").takeIf { it.isNotBlank() } ?: return false
+        val serial = obj.optString("serialNumber").takeIf { it.isNotBlank() } ?: return false
+        val hmac = obj.optString("hmacKey").takeIf { it.isNotBlank() } ?: return false
+        prefs.edit()
+            .putString(KEY_MAC, mac)
+            .putString(KEY_CLIENT_ID, clientId)
+            .putString(KEY_SERIAL, serial)
+            .putString(KEY_HMAC, hmac)
+            .putBoolean(KEY_ACTIVATED, obj.optBoolean("activated", false))
+            .apply()
+        cached = Identity(mac, serial, hmac, clientId, obj.optBoolean("activated", false))
+        return true
+    }
+
     /** Force-regenerate identity. Useful for testing or after a factory reset. */
     @Synchronized
     fun regenerate() {

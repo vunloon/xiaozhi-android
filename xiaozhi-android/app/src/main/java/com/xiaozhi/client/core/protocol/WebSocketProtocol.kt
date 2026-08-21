@@ -6,6 +6,7 @@ import com.xiaozhi.client.BuildConfig
 import com.xiaozhi.client.audio.AudioPlayer
 import com.xiaozhi.client.core.identity.EfuseStore
 import com.xiaozhi.client.iot.ThingManager
+import com.xiaozhi.client.mcp.McpDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -56,6 +57,7 @@ class WebSocketProtocol(
     private val sessionStore: SessionStore,
     private val thingManager: ThingManager,
     private val httpClient: OkHttpClient,
+    private val mcpDispatcher: McpDispatcher,
 ) {
 
     private val scope = CoroutineScope(SupervisorJob())
@@ -255,61 +257,20 @@ class WebSocketProtocol(
     }
 
     /**
-     * Responds to inbound MCP JSON-RPC requests. Plan 1 declares no tools,
-     * so we just complete the handshake (initialize + tools/list → empty)
-     * and answer ping keepalives. Tool calls return an empty result so the
-     * cloud doesn't retry forever — your remote MCP server (xiaozhi-wss)
-     * handles actual tool execution.
+     * Responds to inbound MCP JSON-RPC requests from the cloud's MCP broker.
+     * Delegates to the in-app [McpDispatcher], which runs the local tools
+     * (news/klse/watchlist/music) and answers initialize/ping/tools/list/
+     * tools/call. Replies go back through the voice channel as `mcp` envelopes.
      */
     private fun handleMcpRequest(payload: JsonElement) {
         val obj = runCatching { payload.jsonObject }.getOrNull() ?: return
         val method = obj[KEY_METHOD]?.jsonPrimitive?.contentOrNull ?: return
-        val id = obj[KEY_ID] // may be null for notifications
-
-        when (method) {
-            "initialize" -> {
-                // Capabilities mirror what py-xiaozhi reports: tools list enabled.
-                val result = buildJsonObject {
-                    put("protocolVersion", JsonPrimitive("2024-11-05"))
-                    put("capabilities", buildJsonObject {
-                        put("tools", buildJsonObject { put("listChanged", JsonPrimitive(false)) })
-                    })
-                    put("serverInfo", buildJsonObject {
-                        put("name", JsonPrimitive("xiaozhi-android"))
-                        put("version", JsonPrimitive("1.0.0"))
-                    })
-                }
-                sendMcpResult(id, result)
-            }
-            "notifications/initialized" -> {
-                // Notification — no response required.
-            }
-            "tools/list" -> {
-                val result = buildJsonObject { put("tools", JsonArray(emptyList())) }
-                sendMcpResult(id, result)
-            }
-            "tools/call" -> {
-                // No local tools — return an empty non-error result so the
-                // cloud's MCP broker moves on. The actual tool will run on
-                // your remote MCP server (different session).
-                val result = buildJsonObject {
-                    put("content", JsonArray(emptyList()))
-                    put("isError", JsonPrimitive(false))
-                }
-                sendMcpResult(id, result)
-            }
-            "ping" -> {
-                sendMcpResult(id, buildJsonObject {})
-            }
-            else -> {
-                if (id != null) {
-                    // Method not found — JSON-RPC error -32601.
-                    val err = buildJsonObject {
-                        put("code", JsonPrimitive(-32601))
-                        put("message", JsonPrimitive("Method not found: $method"))
-                    }
-                    sendMcpError(id, err)
-                }
+        if (method.startsWith("notifications")) return
+        if (obj[KEY_ID] == null) return
+        scope.launch {
+            val reply = mcpDispatcher.handle(obj)
+            if (reply != null) {
+                send(McpEnvelope(payload = reply, sessionId = sessionStore.sessionId.value))
             }
         }
     }

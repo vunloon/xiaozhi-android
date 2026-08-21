@@ -5,5 +5,6 @@
     <color name="brand_secondary">#FF6B35</color>
     <color name="brand_background">#0F1424</color>
     <color name="brand_surface">#1A2138</color>
-    <color name="ic_launcher_background">#3B6FE6</color>
+    <!-- Transparent: launchers composite the keyed-out artwork over their own backdrop. -->
+    <color name="ic_launcher_background">#00000000</color>
 </resources>
