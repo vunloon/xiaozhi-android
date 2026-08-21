@@ -30,7 +30,10 @@ class MusicPlayer {
     }
 }
 
+// youtube.com (not youtube-nocookie.com): the privacy host is consent-walled
+// and often renders blank inside an Android WebView. Same params as the web
+// client's iframe so behaviour matches.
 fun embedUrl(videoId: String): String =
-    "https://www.youtube-nocookie.com/embed/${java.net.URLEncoder.encode(videoId, "UTF-8")}?autoplay=1&playsinline=1&rel=0"
+    "https://www.youtube.com/embed/${java.net.URLEncoder.encode(videoId, "UTF-8")}?autoplay=1&playsinline=1&rel=0"
 
 val musicPlayer = MusicPlayer()

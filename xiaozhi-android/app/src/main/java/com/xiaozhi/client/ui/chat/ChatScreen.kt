@@ -1,8 +1,13 @@
 package com.xiaozhi.client.ui.chat
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +23,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,8 +33,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -42,19 +50,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xiaozhi.client.AppContainer
 import com.xiaozhi.client.R
 import com.xiaozhi.client.core.protocol.ListenMode
 import com.xiaozhi.client.core.protocol.WebSocketProtocol
 import com.xiaozhi.client.state.ChatStateMachine
+import com.xiaozhi.client.ui.components.ModeHint
 import com.xiaozhi.client.ui.components.ModeSwitch
 import com.xiaozhi.client.ui.components.MusicPlayerCard
 import com.xiaozhi.client.ui.components.TalkButton
@@ -83,82 +99,116 @@ fun ChatScreen(
     val emotion by vm.emotion.collectAsStateWithLifecycle()
     val micLevel by vm.micLevel.collectAsStateWithLifecycle()
 
+    val palette = LocalXiaozhiPalette.current
     val listState = rememberLazyListState()
     LaunchedEffect(transcript.size) {
         if (transcript.isNotEmpty()) listState.animateScrollToItem(transcript.size - 1)
     }
 
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .imePadding()) {
-        TopBar(
-            connectionState = connectionState,
-            onConnect = { vm.connect() },
-            onDisconnect = { vm.reconnect() },
-            onOpenSettings = onOpenSettings,
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(listOf(palette.bg, palette.bg2, palette.bg)),
+            ),
+    ) {
+        // Optional theme backdrop image with a readability scrim.
+        palette.backgroundRes?.let { res ->
+            Image(
+                painter = painterResource(res),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(palette.bg.copy(alpha = 0.55f), palette.bg.copy(alpha = 0.25f), palette.bg.copy(alpha = 0.6f)),
+                        ),
+                    ),
+            )
+        }
 
-        if (!opusAvailable) OpusUnavailableBanner()
-
-        Box(
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxSize()
+                .statusBarsPadding()
+                .imePadding(),
         ) {
-            val palette = LocalXiaozhiPalette.current
-            palette.backgroundRes?.let { res ->
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(res),
-                    contentDescription = null,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+            TopBar(
+                connectionState = connectionState,
+                onPower = { vm.toggleConnection() },
+                onOpenSettings = onOpenSettings,
+            )
+
+            if (!opusAvailable) OpusUnavailableBanner()
+
+            // Hero: emotion orb + live state.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                StatusOrb(
+                    state = chatState,
+                    connecting = connectionState is WebSocketProtocol.ConnectionState.Connecting,
+                    emotion = emotion,
+                    level = if (chatState == ChatStateMachine.ChatState.LISTENING) micLevel else 0f,
                 )
             }
 
-            LazyColumn(
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 14.dp),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                    .weight(1f)
+                    .fillMaxWidth(),
             ) {
-                if (transcript.isEmpty()) {
-                    item { EmptyConversation() }
-                } else {
-                    items(transcript) { entry -> TranscriptBubble(entry) }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 10.dp),
+                ) {
+                    if (transcript.isEmpty()) {
+                        item { EmptyConversation(mode = mode) }
+                    } else {
+                        items(transcript) { entry -> TranscriptBubble(entry) }
+                    }
                 }
             }
+
+            MusicPlayerCard(
+                accent = palette.accent,
+                text = palette.text,
+                dim = palette.dim,
+            )
+
+            ControlsPanel(
+                chatState = chatState,
+                mode = mode,
+                sessionActive = sessionActive,
+                micLevel = micLevel,
+                opusAvailable = opusAvailable,
+                onModeChange = { vm.setMode(it) },
+                onTalkStart = { vm.startListening() },
+                onTalkEnd = {
+                    if (mode == ListenMode.manual) vm.stopListening() else vm.endConversation()
+                },
+                onAbort = { vm.abort() },
+                onSendText = { text -> vm.sendText(text) },
+            )
         }
-
-        val palette = LocalXiaozhiPalette.current
-        MusicPlayerCard(
-            accent = palette.accent,
-            text = palette.text,
-            dim = palette.dim,
-        )
-
-        BottomBar(
-            chatState = chatState,
-            connectionState = connectionState,
-            mode = mode,
-            sessionActive = sessionActive,
-            onModeChange = { vm.setMode(it) },
-            onTalkStart = { vm.startListening() },
-            onTalkEnd = {
-                if (mode == ListenMode.manual) vm.stopListening() else vm.endConversation()
-            },
-            onAbort = { vm.abort() },
-            onSendText = { text -> vm.sendText(text) },
-        )
     }
 }
 
 @Composable
 private fun TopBar(
     connectionState: WebSocketProtocol.ConnectionState,
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
+    onPower: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val palette = LocalXiaozhiPalette.current
@@ -174,35 +224,71 @@ private fun TopBar(
         connecting -> stringResource(R.string.chat_connecting)
         else -> stringResource(R.string.chat_disconnected)
     }
+    val pulse = rememberInfiniteTransition(label = "conn-pulse")
+    val dotAlpha by pulse.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "conn-dot-alpha",
+    )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(palette.panel)
-            .border(1.dp, palette.line, RoundedCornerShape(0.dp))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
+        // Connection status pill.
+        Row(
             modifier = Modifier
-                .size(8.dp)
-                .background(dotColor, CircleShape),
+                .background(palette.panel, RoundedCornerShape(50))
+                .border(1.dp, palette.line, RoundedCornerShape(50))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .alpha(if (connecting) dotAlpha else 1f)
+                    .background(dotColor, CircleShape),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(text = label, fontSize = 12.sp, color = palette.dim)
+        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = stringResource(R.string.app_name),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = palette.text,
+        )
+        Spacer(Modifier.weight(1f))
+        CircleIconButton(
+            icon = { Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null, tint = if (connected) palette.ok else palette.dim, modifier = Modifier.size(18.dp)) },
+            onClick = onPower,
         )
         Spacer(Modifier.width(8.dp))
-        Text(text = label, fontSize = 12.sp, color = palette.dim)
-        Spacer(Modifier.weight(1f))
-        IconButton(
-            onClick = { if (connected) onDisconnect() else onConnect() },
-            modifier = Modifier.size(28.dp),
-        ) {
-            Text("⏻", fontSize = 15.sp, color = palette.dim)
-        }
-        IconButton(
+        CircleIconButton(
+            icon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = palette.dim, modifier = Modifier.size(18.dp)) },
             onClick = onOpenSettings,
-            modifier = Modifier.size(28.dp),
-        ) {
-            Text("⚙", fontSize = 15.sp, color = palette.dim)
-        }
+        )
+    }
+}
+
+@Composable
+private fun CircleIconButton(
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    val palette = LocalXiaozhiPalette.current
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = palette.panel,
+        border = BorderStroke(1.dp, palette.line),
+        modifier = Modifier.size(36.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) { icon() }
     }
 }
 
@@ -213,37 +299,43 @@ private fun OpusUnavailableBanner() {
         color = palette.danger.copy(alpha = 0.12f),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
+            .padding(horizontal = 14.dp, vertical = 4.dp),
         shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.35f)),
     ) {
         Text(
-            text = "Opus native library failed to load — voice unavailable.",
+            text = "Opus native library failed to load — voice unavailable, text chat still works.",
             style = MaterialTheme.typography.bodySmall,
             color = palette.danger,
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }
 
 @Composable
-private fun EmptyConversation() {
+private fun EmptyConversation(mode: ListenMode) {
     val palette = LocalXiaozhiPalette.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 32.dp),
+            .padding(top = 24.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Hold the mic button and talk, or type a message.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = palette.dim,
+                text = "Start a conversation",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.text,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
-                text = "Manual · push-to-talk  |  Auto · hands-free turns  |  Realtime · full duplex",
-                fontSize = 12.sp,
+                text = when (mode) {
+                    ListenMode.manual -> "Hold the mic button and talk, or type below."
+                    ListenMode.auto -> "Tap the mic for a hands-free chat, or type below."
+                    ListenMode.realtime -> "Tap the mic — it listens continuously and you can interrupt anytime."
+                },
+                style = MaterialTheme.typography.bodyMedium,
                 color = palette.dim,
                 textAlign = TextAlign.Center,
             )
@@ -266,41 +358,33 @@ private fun TranscriptBubble(entry: ChatStateMachine.TranscriptEntry) {
 private fun ChatBubble(text: String, isUser: Boolean) {
     val palette = LocalXiaozhiPalette.current
     val shape = if (isUser) {
-        RoundedCornerShape(
-            topStart = 14.dp, topEnd = 14.dp,
-            bottomStart = 14.dp, bottomEnd = 4.dp,
-        )
+        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp)
     } else {
-        RoundedCornerShape(
-            topStart = 14.dp, topEnd = 14.dp,
-            bottomStart = 4.dp, bottomEnd = 14.dp,
-        )
+        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 6.dp, bottomEnd = 18.dp)
     }
     Surface(
         color = if (isUser) palette.userBubbleBg else palette.card,
         shape = shape,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (isUser) palette.userBubbleLine else palette.line,
-        ),
-        modifier = Modifier.widthIn(max = 300.dp),
+        border = BorderStroke(1.dp, if (isUser) palette.userBubbleLine else palette.line),
+        modifier = Modifier.widthIn(max = 310.dp),
     ) {
         Text(
             text = text,
             fontSize = 15.sp,
             lineHeight = 21.sp,
             color = palette.text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
         )
     }
 }
 
 @Composable
-private fun BottomBar(
+private fun ControlsPanel(
     chatState: ChatStateMachine.ChatState,
-    connectionState: WebSocketProtocol.ConnectionState,
     mode: ListenMode,
     sessionActive: Boolean,
+    micLevel: Float,
+    opusAvailable: Boolean,
     onModeChange: (ListenMode) -> Unit,
     onTalkStart: () -> Unit,
     onTalkEnd: () -> Unit,
@@ -308,24 +392,29 @@ private fun BottomBar(
     onSendText: (String) -> Unit,
 ) {
     val palette = LocalXiaozhiPalette.current
-    val connected = connectionState is WebSocketProtocol.ConnectionState.Connected
     val listening = chatState == ChatStateMachine.ChatState.LISTENING
     val speaking = chatState == ChatStateMachine.ChatState.SPEAKING
     val talkActive = listening || (speaking && sessionActive && mode == ListenMode.realtime)
 
     var textInput by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val sendBg by animateColorAsState(
+        targetValue = if (textInput.isNotBlank()) palette.accent else palette.card,
+        animationSpec = tween(150),
+        label = "send-bg",
+    )
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .background(palette.panel, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .border(1.dp, palette.line, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .navigationBarsPadding()
-            .background(palette.panel)
-            .border(1.dp, palette.line, RoundedCornerShape(0.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ModeSwitch(mode = mode, onChange = onModeChange)
+        ModeHint(mode = mode, modifier = Modifier.fillMaxWidth())
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -333,27 +422,30 @@ private fun BottomBar(
             horizontalArrangement = Arrangement.Center,
         ) {
             if (speaking) {
-                IconButton(
+                Surface(
                     onClick = onAbort,
-                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = palette.danger.copy(alpha = 0.14f),
+                    border = BorderStroke(1.5.dp, palette.danger),
+                    modifier = Modifier.size(52.dp),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(palette.danger.copy(alpha = 0.25f), CircleShape)
-                            .border(2.dp, palette.danger, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("⏹", fontSize = 14.sp, color = palette.danger)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.Stop,
+                            contentDescription = "Interrupt",
+                            tint = palette.danger,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(20.dp))
             }
             TalkButton(
                 mode = mode,
                 listening = talkActive,
                 speaking = speaking,
-                enabled = connected,
+                enabled = opusAvailable,
+                micLevel = if (listening) micLevel else 0f,
                 onTalkStart = onTalkStart,
                 onTalkEnd = onTalkEnd,
             )
@@ -368,25 +460,25 @@ private fun BottomBar(
                 onValueChange = { textInput = it },
                 modifier = Modifier
                     .weight(1f)
-                    .height(44.dp),
+                    .height(52.dp),
                 placeholder = {
                     Text("Type a message…", fontSize = 14.sp, color = palette.dim)
                 },
                 singleLine = true,
-                enabled = connected,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(26.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = palette.card,
-                    unfocusedContainerColor = palette.card,
-                    focusedBorderColor = Color.Transparent,
+                    unfocusedContainerColor = palette.card.copy(alpha = 0.7f),
+                    focusedBorderColor = palette.accent.copy(alpha = 0.5f),
                     unfocusedBorderColor = Color.Transparent,
                     disabledContainerColor = palette.card.copy(alpha = 0.6f),
                     disabledBorderColor = Color.Transparent,
+                    cursorColor = palette.accent,
                 ),
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.text, fontSize = 14.sp),
             )
-            Spacer(Modifier.width(8.dp))
-            androidx.compose.material3.Button(
+            Spacer(Modifier.width(10.dp))
+            Surface(
                 onClick = {
                     val t = textInput.trim()
                     if (t.isNotEmpty()) {
@@ -395,21 +487,19 @@ private fun BottomBar(
                         keyboardController?.hide()
                     }
                 },
-                modifier = Modifier
-                    .height(44.dp)
-                    .width(44.dp),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(0.dp),
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = palette.accent,
-                    contentColor = palette.bg,
-                ),
+                shape = CircleShape,
+                color = sendBg,
+                border = BorderStroke(1.dp, if (textInput.isNotBlank()) palette.accent else palette.line),
+                modifier = Modifier.size(44.dp),
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.Send,
-                    contentDescription = "Send",
-                    modifier = Modifier.size(16.dp),
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.Send,
+                        contentDescription = "Send",
+                        tint = if (textInput.isNotBlank()) palette.bg else palette.dim,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
             }
         }
     }

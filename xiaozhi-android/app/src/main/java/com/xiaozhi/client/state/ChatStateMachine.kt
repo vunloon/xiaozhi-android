@@ -64,6 +64,24 @@ class ChatStateMachine(
         if (protocolEventJob?.isActive == true) return
         ensurePipeline()
         protocolEventJob = scope.launch {
+            // Mirror the web's onClosed: a lost socket ends any active session
+            // (the server forgets the listen state across reconnects, so a
+            // stale LISTENING would silently stop recording forever).
+            launch {
+                protocol.state.collect { s ->
+                    if (s is WebSocketProtocol.ConnectionState.Disconnected ||
+                        s is WebSocketProtocol.ConnectionState.Failed
+                    ) {
+                        if (_state.value != ChatState.IDLE || _sessionActive.value) {
+                            Log.i(TAG, "connection lost — resetting session state")
+                            _state.value = ChatState.IDLE
+                            _sessionActive.value = false
+                            stopPlayback()
+                            stopCapture()
+                        }
+                    }
+                }
+            }
             protocol.events.collectLatest { ev -> handleEvent(ev) }
         }
     }
@@ -107,26 +125,27 @@ class ChatStateMachine(
         scope.launch { stopCapture() }
     }
 
-    /** Ends a hands-free (auto/realtime) conversation. */
+    /** Ends a hands-free (auto/realtime) conversation. Web parity: only a
+     *  `listen stop` is sent — no abort (the server ends the session cleanly). */
     fun endConversation() {
         if (!_sessionActive.value && _state.value != ChatState.LISTENING) return
         Log.i(TAG, "endConversation")
         _sessionActive.value = false
         protocol.sendStopListening()
-        protocol.sendAbort()
         stopPlayback()
         _state.value = ChatState.IDLE
         scope.launch { stopCapture() }
     }
 
-    /** Interrupt the assistant. Keeps the session alive in auto/realtime. */
+    /** Interrupt the assistant. Keeps the session alive in auto/realtime:
+     *  the mic simply resumes streaming and the server's VAD picks up the
+     *  next utterance (web parity — no `listen start` re-send here). */
     fun abort() {
         Log.i(TAG, "abort")
         protocol.sendAbort()
         stopPlayback()
         if (_sessionActive.value) {
             _state.value = ChatState.LISTENING
-            protocol.sendStartListening(mode = _listeningMode.value)
             startCapture()
         } else {
             _state.value = ChatState.IDLE

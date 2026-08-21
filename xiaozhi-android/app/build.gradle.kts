@@ -146,6 +146,9 @@ dependencies {
     // Encrypted preferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // WebView extras (X-Requested-With control for the YouTube embed)
+    implementation("androidx.webkit:webkit:1.11.0")
+
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 

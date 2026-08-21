@@ -38,6 +38,10 @@ class ChatViewModel(
     private val _toolDrawerOpen = MutableStateFlow(false)
     val toolDrawerOpen: StateFlow<Boolean> = _toolDrawerOpen.asStateFlow()
 
+    /** Set when the user asks to listen before the WebSocket is ready; fired
+     *  once Connected (the web client likewise waits for hello on press). */
+    private var pendingListen = false
+
     init {
         machine.bind()
         // Always run OTA once on entering chat — even if the activation screen
@@ -52,9 +56,28 @@ class ChatViewModel(
             }
         }
         ensureConnection()
+        viewModelScope.launch {
+            connectionState.collect { s ->
+                if (s is WebSocketProtocol.ConnectionState.Connected && pendingListen) {
+                    pendingListen = false
+                    machine.startListening()
+                }
+            }
+        }
     }
 
     fun connect() = ensureConnection()
+
+    /** True toggle like the web's power button: online → disconnect, else → connect. */
+    fun toggleConnection() {
+        if (connectionState.value is WebSocketProtocol.ConnectionState.Connected ||
+            connectionState.value is WebSocketProtocol.ConnectionState.Connecting
+        ) {
+            container.protocol.disconnect()
+        } else {
+            ensureConnection()
+        }
+    }
 
     fun reconnect() {
         container.protocol.disconnect()
@@ -65,8 +88,26 @@ class ChatViewModel(
         _toolDrawerOpen.value = !_toolDrawerOpen.value
     }
 
-    fun setMode(mode: com.xiaozhi.client.core.protocol.ListenMode) = machine.setMode(mode)
-    fun startListening() = machine.startListening()
+    fun setMode(mode: com.xiaozhi.client.core.protocol.ListenMode) {
+        machine.setMode(mode)
+        // Web parity: entering realtime mode opens the mic immediately (it is
+        // an always-listening mode) when the connection is up.
+        if (mode == com.xiaozhi.client.core.protocol.ListenMode.realtime &&
+            connectionState.value is WebSocketProtocol.ConnectionState.Connected
+        ) {
+            machine.startListening(mode)
+        }
+    }
+
+    fun startListening() {
+        if (connectionState.value is WebSocketProtocol.ConnectionState.Connected) {
+            machine.startListening()
+        } else {
+            pendingListen = true
+            ensureConnection()
+        }
+    }
+
     fun stopListening() = machine.stopListening()
     fun endConversation() = machine.endConversation()
     fun abort() = machine.abort()
