@@ -8,16 +8,20 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import org.jsoup.Jsoup
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 // Ported from xiaozhi-web/src/tools/watchlist.ts. Persisted in app SharedPreferences
-// (the web uses localStorage). Entries are Bursa stock codes, optionally holdings
-// (shares + buy_price) whose P/L is computed against live KLSE prices.
+// (the web uses localStorage). Entries are Yahoo Finance symbols — Bursa/KLSE codes
+// (auto-suffixed .KL) or US tickers — optionally holdings (shares + buy_price)
+// whose P/L is computed against live prices. Prices come from the public Yahoo
+// chart endpoint, so no cookie/crumb auth is needed here.
 
 @Serializable
 data class WatchEntry(
@@ -65,29 +69,32 @@ class WatchlistTools(context: Context) : ToolProvider {
         object : Tool {
             override val name = "add_to_watchlist"
             override val description =
-                "Add a Bursa stock to your watchlist, or update it if already present (upsert). " +
-                    "Pass only the code to track its price; pass shares (and buy_price) to record a holding and " +
-                    "track profit/loss. Args: code (e.g. 1155), shares (units, omit or 0 for a plain watch), " +
-                    "buy_price (average price paid per share, RM)."
+                "Add a stock to your watchlist, or update it if already present (upsert). Supports " +
+                    "Bursa/KLSE stocks (bare code e.g. 1155, stored as 1155.KL) and US/S&P 500 tickers " +
+                    "(e.g. AAPL). Pass only the code to track its price; pass shares (and buy_price) to " +
+                    "record a holding and track profit/loss. Args: code (e.g. 1155 or AAPL), shares " +
+                    "(units, omit or 0 for a plain watch), buy_price (average price paid per share, " +
+                    "in the stock's own currency)."
             override fun inputSchema(): JsonObject = buildJsonObject {
                 put("type", "object")
                 put("properties", buildJsonObject {
-                    put("code", buildJsonObject { put("type", "string"); put("description", "KLSE stock code, e.g. '1155'.") })
+                    put("code", buildJsonObject { put("type", "string"); put("description", "Stock symbol or Bursa code, e.g. '1155' or 'AAPL'.") })
                     put("shares", buildJsonObject { put("type", "number"); put("description", "Shares held (units). Omit or 0 for a plain watch.") })
-                    put("buy_price", buildJsonObject { put("type", "number"); put("description", "Average price paid per share (RM).") })
+                    put("buy_price", buildJsonObject { put("type", "number"); put("description", "Average price paid per share, in the stock's currency.") })
                 })
                 put("required", JsonArray(listOf(JsonPrimitive("code"))))
             }
             override suspend fun run(args: JsonObject): String {
-                val code = (args["code"]?.toString() ?: "").trim('"', ' ').trim()
-                if (code.isEmpty()) return jsonPretty(buildJsonObject { put("error", "code is required") })
+                val raw = (args["code"]?.toString() ?: "").trim('"', ' ').trim()
+                if (raw.isEmpty()) return jsonPretty(buildJsonObject { put("error", "code is required") })
+                val code = resolveYahooSymbol(raw)
                 val shares = (args["shares"]?.toString()?.toLongOrNull() ?: 0L).coerceAtLeast(0)
                 val buy = (args["buy_price"]?.toString()?.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
 
-                val summary = klseSummary(code)
-                val name = summary?.name ?: code
+                val summary = yahooSummary(code)
+                val name = summary?.name ?: raw
 
-                val items = repo.load().toMutableList()
+                val items = repo.load().map { it.copy(code = resolveYahooSymbol(it.code)) }.toMutableList()
                 val entry = items.firstOrNull { it.code == code } ?: WatchEntry(code = code)
                 if (items.none { it.code == code }) items.add(entry)
                 val idx = items.indexOfFirst { it.code == code }
@@ -105,7 +112,8 @@ class WatchlistTools(context: Context) : ToolProvider {
                     put("type", if (shares > 0) "holding" else "watch")
                     if (shares > 0) put("shares", shares)
                     if (shares > 0 && buy > 0) put("buy_price", buy)
-                    if (summary == null) put("warning", "Could not verify this code with KLSE right now — saved anyway.")
+                    summary?.currency?.let { put("currency", it) }
+                    if (summary == null) put("warning", "Could not verify this symbol with Yahoo Finance right now — saved anyway.")
                 }
                 return jsonPretty(out)
             }
@@ -113,37 +121,39 @@ class WatchlistTools(context: Context) : ToolProvider {
         object : Tool {
             override val name = "get_watchlist"
             override val description =
-                "List your watchlist with live KLSE prices, plus P/L and totals for holdings. " +
-                    "Each item: {code, name, price, shares?, buy_price?, value?, cost?, pl?, pl_pct?}. " +
-                    "Holdings need both shares and buy_price (and a live price) to count toward totals."
+                "List your watchlist with live prices from Yahoo Finance, plus P/L and totals for " +
+                    "holdings. Each item: {code, name, price, currency?, shares?, buy_price?, value?, " +
+                    "cost?, pl?, pl_pct?}. Holdings need both shares and buy_price (and a live price) to " +
+                    "count toward totals; totals are grouped per currency (MYR for KLSE, USD for US stocks)."
             override fun inputSchema(): JsonObject = buildJsonObject {
                 put("type", "object")
                 put("properties", buildJsonObject { })
                 put("required", JsonArray(emptyList()))
             }
             override suspend fun run(args: JsonObject): String {
-                val items = repo.load()
+                val items = repo.load().map { it.copy(code = resolveYahooSymbol(it.code)) }
                 if (items.isEmpty()) {
                     return jsonPretty(buildJsonObject {
                         put("message", "Your watchlist is empty. Add a stock with add_to_watchlist.")
                     })
                 }
-                val summaries = items.map { it.code to klseSummary(it.code) }.toMap()
+                val summaries = items.associate { it.code to yahooSummary(it.code) }
                 val results = mutableListOf<JsonObject>()
-                var totCost = 0.0
-                var totValue = 0.0
                 var holdings = 0
                 var pricedHoldings = 0
+                // currency -> [cost, value]
+                val totalsBy = LinkedHashMap<String, DoubleArray>()
                 for (it in items) {
                     val s = summaries[it.code]
                     val price = s?.price
                     var note: String? = if (price == null) {
-                        "price unavailable (KLSE blocked or code invalid)"
+                        "price unavailable (quote fetch failed or symbol invalid)"
                     } else null
                     val entry = buildJsonObject {
                         put("code", it.code)
                         put("name", it.name ?: s?.name ?: it.code)
-                        s?.priceStr?.let { p -> put("price", p) }
+                        s?.currency?.let { c -> put("currency", c) }
+                        price?.let { p -> put("price", p) }
                         val shares = it.shares
                         if (shares != null && shares > 0) {
                             holdings++
@@ -159,29 +169,34 @@ class WatchlistTools(context: Context) : ToolProvider {
                                     val pl = shares * price - shares * buy
                                     put("pl", round2(pl))
                                     put("pl_pct", if (buy != 0.0) round2(pl / (shares * buy) * 100) else null)
-                                    totCost += shares * buy
-                                    totValue += shares * price
+                                    val cur = s?.currency ?: "XXX"
+                                    val tv = totalsBy.getOrPut(cur) { DoubleArray(2) }
+                                    tv[0] += shares * buy
+                                    tv[1] += shares * price
                                     pricedHoldings++
                                 }
                             } else {
                                 note = (note ?: "") + " add buy_price to see P/L"
                             }
                         }
-                        note?.trim()?.takeIf { it.isNotEmpty() }?.let { put("note", it) }
+                        note?.trim()?.takeIf { n -> n.isNotEmpty() }?.let { n -> put("note", n) }
                     }
                     results.add(entry)
                 }
                 val out = buildJsonObject {
                     put("count", items.size)
                     put("holdings", holdings)
-                    put("currency", "MYR")
                     put("items", JsonArray(results))
                     if (pricedHoldings > 0) {
                         put("totals", buildJsonObject {
-                            put("cost", round2(totCost))
-                            put("value", round2(totValue))
-                            put("pl", round2(totValue - totCost))
-                            put("pl_pct", if (totCost != 0.0) round2((totValue - totCost) / totCost * 100) else null)
+                            totalsBy.forEach { (cur, tv) ->
+                                put(cur, buildJsonObject {
+                                    put("cost", round2(tv[0]))
+                                    put("value", round2(tv[1]))
+                                    put("pl", round2(tv[1] - tv[0]))
+                                    put("pl_pct", if (tv[0] != 0.0) round2((tv[1] - tv[0]) / tv[0] * 100) else null)
+                                })
+                            }
                         })
                     }
                 }
@@ -190,20 +205,21 @@ class WatchlistTools(context: Context) : ToolProvider {
         },
         object : Tool {
             override val name = "remove_from_watchlist"
-            override val description = "Remove a stock from your watchlist by its code. Args: code — e.g. '1155'."
+            override val description = "Remove a stock from your watchlist by its symbol. Args: code — e.g. '1155', '1155.KL' or 'AAPL'."
             override fun inputSchema(): JsonObject = buildJsonObject {
                 put("type", "object")
                 put("properties", buildJsonObject {
-                    put("code", buildJsonObject { put("type", "string"); put("description", "KLSE stock code to remove.") })
+                    put("code", buildJsonObject { put("type", "string"); put("description", "Stock symbol or Bursa code to remove.") })
                 })
                 put("required", JsonArray(listOf(JsonPrimitive("code"))))
             }
             override suspend fun run(args: JsonObject): String {
-                val code = (args["code"]?.toString() ?: "").trim('"', ' ').trim()
-                val before = repo.load()
+                val raw = (args["code"]?.toString() ?: "").trim('"', ' ').trim()
+                val code = resolveYahooSymbol(raw)
+                val before = repo.load().map { it.copy(code = resolveYahooSymbol(it.code)) }
                 val remaining = before.filter { it.code != code }
                 if (remaining.size == before.size) {
-                    return jsonPretty(buildJsonObject { put("message", "$code is not in your watchlist.") })
+                    return jsonPretty(buildJsonObject { put("message", "$raw is not in your watchlist.") })
                 }
                 repo.save(remaining)
                 return jsonPretty(buildJsonObject { put("removed", code); put("remaining", remaining.size) })
@@ -215,28 +231,20 @@ class WatchlistTools(context: Context) : ToolProvider {
 
     private fun round2(v: Double): Double = kotlin.math.round(v * 100.0) / 100.0
 
-    private fun parsePrice(text: String?): Double? {
-        if (text.isNullOrBlank()) return null
-        val m = Regex("\\d+(?:\\.\\d+)?").find(text.replace(",", ""))
-        return m?.value?.toDoubleOrNull()
-    }
-
-    private fun klseSummary(code: String): Summary? {
-        val url = "https://www.klsescreener.com/v2/stocks/view/$code"
+    /** Live name/price/currency from Yahoo's public chart endpoint (no crumb auth needed). */
+    private fun yahooSummary(symbol: String): Summary? {
         return try {
-            val text = HttpTools.fetch(url)
-            if (text.contains("Just a moment...") || text.length < 1000) return null
-            val doc = Jsoup.parse(text, url)
-            val priceStr = doc.getElementById("price")?.text()?.trim()
-            Summary(
-                name = doc.title().takeIf { it.isNotBlank() }?.trim(),
-                priceStr = priceStr,
-                price = parsePrice(priceStr),
-            )
+            val enc = URLEncoder.encode(symbol, "UTF-8")
+            val body = HttpTools.fetch("https://query1.finance.yahoo.com/v8/finance/chart/$enc?range=1d&interval=1d")
+            val quote = parseChartQuote(body, symbol)
+            val name = (quote["longName"] ?: quote["shortName"])?.jsonPrimitive?.contentOrNull
+            val price = quote["regularMarketPrice"]?.jsonPrimitive?.doubleOrNull
+            val currency = quote["currency"]?.jsonPrimitive?.contentOrNull
+            Summary(name = name, price = price, currency = currency)
         } catch (t: Throwable) {
             null
         }
     }
 
-    private data class Summary(val name: String?, val priceStr: String?, val price: Double?)
+    private data class Summary(val name: String?, val price: Double?, val currency: String?)
 }

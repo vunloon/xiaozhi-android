@@ -95,8 +95,8 @@ YouTube Music), make sure:
    can route tool calls.
 
 When you ask the device "what's Maybank's price?", the cloud LLM calls the
-remote MCP server's `get_klse_stock_data` tool and TTS-reads the result back.
-The Android app surfaces the call in the tool-activity drawer.
+in-app MCP server's `get_stock_quote` tool (Yahoo Finance) and TTS-reads the
+result back. The Android app surfaces the call in the tool-activity drawer.
 
 ## Architecture
 

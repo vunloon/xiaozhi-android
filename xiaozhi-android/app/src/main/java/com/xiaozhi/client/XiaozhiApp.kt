@@ -12,10 +12,10 @@ import com.xiaozhi.client.core.settings.SettingsStore
 import com.xiaozhi.client.mcp.McpDispatcher
 import com.xiaozhi.client.mcp.ToolRegistry
 import com.xiaozhi.client.state.ChatStateMachine
-import com.xiaozhi.client.tools.KlseTools
 import com.xiaozhi.client.tools.MusicTools
 import com.xiaozhi.client.tools.NewsTools
 import com.xiaozhi.client.tools.WatchlistTools
+import com.xiaozhi.client.tools.YahooFinanceTools
 import com.xiaozhi.client.iot.ThingManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -84,11 +84,11 @@ class AppContainer(
     val sessionStore: SessionStore by lazy { SessionStore() }
     val thingManager: ThingManager by lazy { ThingManager() }
 
-    /** In-app MCP tools (news/klse/watchlist/music), shared by both channels. */
+    /** In-app MCP tools (news/stocks/watchlist/music), shared by both channels. */
     val toolRegistry: ToolRegistry by lazy {
         ToolRegistry().apply {
             registerAll(*NewsTools().tools().toTypedArray())
-            registerAll(*KlseTools().tools().toTypedArray())
+            registerAll(*YahooFinanceTools().tools().toTypedArray())
             registerAll(*WatchlistTools(context).tools().toTypedArray())
             registerAll(*MusicTools().tools().toTypedArray())
         }
