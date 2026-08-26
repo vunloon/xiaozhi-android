@@ -10,7 +10,6 @@ import com.xiaozhi.client.core.protocol.SessionStore
 import com.xiaozhi.client.core.protocol.WebSocketProtocol
 import com.xiaozhi.client.core.settings.SettingsStore
 import com.xiaozhi.client.mcp.McpDispatcher
-import com.xiaozhi.client.mcp.McpWssClient
 import com.xiaozhi.client.mcp.ToolRegistry
 import com.xiaozhi.client.state.ChatStateMachine
 import com.xiaozhi.client.tools.KlseTools
@@ -95,10 +94,6 @@ class AppContainer(
         }
     }
     val mcpDispatcher: McpDispatcher by lazy { McpDispatcher(toolRegistry) }
-
-    val mcpWssClient: McpWssClient by lazy {
-        McpWssClient(mcpDispatcher = mcpDispatcher, httpClient = sharedHttpClient, scope = appScope)
-    }
 
     val protocol: WebSocketProtocol by lazy {
         WebSocketProtocol(

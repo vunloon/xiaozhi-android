@@ -30,32 +30,9 @@
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
-    <string name="settings_disconnect">Disconnect</string>
-    <string name="settings_reconnect">Reconnect</string>
-    <string name="settings_about">About</string>
     <string name="settings_save">Save</string>
     <string name="settings_cancel">Cancel</string>
-    <string name="settings_ota_url">OTA URL</string>
-    <string name="settings_ws_url">WebSocket URL (blank = official cloud)</string>
-    <string name="settings_token">Access token</string>
-    <string name="settings_vision_base">Vision base URL (blank = disabled)</string>
-    <string name="settings_mcp_wss_url">MCP WSS URL</string>
-    <string name="settings_mcp_wss_connect">Connect MCP server</string>
-    <string name="settings_mcp_wss_disconnect">Disconnect MCP server</string>
-    <string name="settings_mcp_wss_off">Off</string>
-    <string name="settings_mcp_wss_connecting">Connecting…</string>
-    <string name="settings_mcp_wss_connected">Connected</string>
     <string name="settings_theme">Background / theme</string>
-    <string name="settings_identity">Device identity</string>
-    <string name="settings_identity_status_activated">activated ✓</string>
-    <string name="settings_identity_status_not">not activated</string>
-    <string name="settings_copy_identity">Copy identity JSON</string>
-    <string name="settings_import_identity">Import identity JSON</string>
-    <string name="settings_reset_identity">Reset identity (requires re-activation)</string>
-    <string name="settings_identity_copied">Copied ✓</string>
-    <string name="settings_identity_imported">Identity imported. Reconnect to use it.</string>
-    <string name="settings_tool_activity">Tool activity</string>
-    <string name="settings_tool_empty">No tool calls yet</string>
 
     <!-- Service -->
     <string name="service_notification_title">Xiaozhi is running</string>

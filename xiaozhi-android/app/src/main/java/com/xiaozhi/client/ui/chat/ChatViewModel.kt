@@ -51,8 +51,7 @@ class ChatViewModel(
             container.activationManager.state.value is com.xiaozhi.client.core.activation.ActivationState.Failed
         ) {
             container.appScope.launch {
-                val otaUrl = container.settingsStore.first().otaUrl
-                container.activationManager.start(otaUrl = otaUrl)
+                container.activationManager.start()
             }
         }
         ensureConnection()
@@ -117,17 +116,12 @@ class ChatViewModel(
         if (connectionState.value is WebSocketProtocol.ConnectionState.Disconnected ||
             connectionState.value is WebSocketProtocol.ConnectionState.Failed
         ) {
-            // Prefer the user's Settings override for ws URL/token; otherwise
-            // fall back to the websocket config returned by OTA, if any; and
-            // finally to the protocol's built-in default (api.tenclass.net).
+            // The websocket URL/token come from the OTA handshake; fall back
+            // to the protocol's built-in default (api.tenclass.net) if OTA
+            // hasn't answered yet.
             container.appScope.launch {
-                val s = container.settingsStore.first()
-                val url = s.wsUrl.takeIf { it.isNotBlank() }
-                val token = s.token.takeIf { it.isNotBlank() }
                 val ota = container.activationManager.websocketConfig.value
-                val effectiveUrl = url ?: ota?.url
-                val effectiveToken = token ?: ota?.token
-                container.protocol.connect(url = effectiveUrl, token = effectiveToken)
+                container.protocol.connect(url = ota?.url, token = ota?.token)
             }
         }
     }
