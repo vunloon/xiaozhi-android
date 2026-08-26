@@ -14,7 +14,25 @@ import java.net.URI
 // Ported from xiaozhi-web/src/tools/news.ts. Two-step retrieval is intentional:
 // the list tools return ≤15 {title,url}; the AI then calls get_news_article(url).
 
-private data class NewsSite(val base: String, val paths: Map<String, String>)
+private data class NewsSite(
+    val base: String,
+    val paths: Map<String, String>,
+    // Article URL pattern (optional). When set, only matching links are kept and the
+    // title-length heuristic is skipped; sites without one keep the legacy heuristic.
+    val articlePattern: Regex? = null,
+)
+
+// Link labels that never carry a headline ("read more"-style); when the anchor's
+// visible text is one of these or empty, the title attribute is the real headline.
+private val GENERIC_LINK_TEXTS = setOf(
+    "阅读全文", "更多", "更多新闻", "更多視频", "更多文章", "read more", "more", "详情", "全文",
+)
+
+private fun anchorTitle(a: org.jsoup.nodes.Element): String {
+    val text = a.text().trim()
+    if (text.isNotEmpty() && text.lowercase() !in GENERIC_LINK_TEXTS) return text
+    return a.attr("title").trim().ifEmpty { text }
+}
 
 private val SITES: Map<String, NewsSite> = mapOf(
     "oriental" to NewsSite(
@@ -25,6 +43,8 @@ private val SITES: Map<String, NewsSite> = mapOf(
             "finance" to "news/business",
             "entertainment" to "news/entertainment",
         ),
+        // e.g. /news/nation/2026/08/26/843390 — excludes nav/section/footer links.
+        articlePattern = Regex("https?://[^/]+/news/[a-z-]+/\\d{4}/\\d{2}/\\d{2}/\\d+.*"),
     ),
     "sinchew" to NewsSite(
         "https://www.sinchew.com.my",
@@ -46,16 +66,18 @@ private val SITES: Map<String, NewsSite> = mapOf(
     ),
 )
 
-private fun parseList(html: String, baseUrl: String): JsonArray {
+internal fun parseList(html: String, baseUrl: String, articlePattern: Regex? = null): JsonArray {
     val doc = Jsoup.parse(html, baseUrl)
     val results = mutableListOf<JsonObject>()
     val seenUrls = mutableSetOf<String>()
     val seenTitles = mutableSetOf<String>()
     for (a in doc.select("a[href]")) {
-        val title = a.text().trim()
+        val title = anchorTitle(a)
         val href = a.attr("href")
-        if (title.length <= 10 || title.length >= 150 || href.isEmpty()) continue
+        if (href.isEmpty() || title.isEmpty() || title.length >= 150) continue
         val url = runCatching { URI(baseUrl).resolve(href).toString() }.getOrNull() ?: continue
+        val isArticle = articlePattern?.matches(url) ?: (title.length > 10)
+        if (!isArticle) continue
         if (url in seenUrls || title in seenTitles) continue
         seenUrls.add(url)
         seenTitles.add(title)
@@ -90,7 +112,7 @@ private fun makeListTool(name: String, siteKey: String, description: String): To
             val url = if (path.isNotEmpty()) "${site.base}/$path" else site.base
             return try {
                 val text = HttpTools.fetch(url)
-                jsonPretty(buildJsonObject { put("items", parseList(text, url)) })
+                jsonPretty(buildJsonObject { put("items", parseList(text, url, site.articlePattern)) })
             } catch (t: Throwable) {
                 jsonPretty(buildJsonObject { put("error", t.message ?: t::class.java.simpleName) })
             }
