@@ -31,7 +31,17 @@ class VoiceService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand")
         promoteToForeground()
-        return START_STICKY
+        // START_NOT_STICKY: with START_STICKY the system restarted the service
+        // after the user swiped the app away from recents, so the process
+        // resurrected itself and the app appeared impossible to kill.
+        return START_NOT_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.i(TAG, "onTaskRemoved: stopping so the app can be cleared from recents")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun promoteToForeground() {

@@ -120,8 +120,12 @@ class AudioPlayer(
         ).coerceAtLeast(maxSamplesPerFrame * 2) * 4)
             .coerceAtLeast(MIN_TRACK_BYTES)
 
+        // USAGE_MEDIA: the media stream is what the volume rocker controls and
+        // what the emulator reliably mixes to host audio. USAGE_VOICE_COMMUNICATION
+        // works on real devices but its volume has no audible effect on the
+        // emulator's ranchu HAL.
         val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
 
@@ -143,7 +147,7 @@ class AudioPlayer(
             // Older API levels may reject PERFORMANCE_MODE_LOW_LATENCY — fall back.
             Log.w(TAG, "Low-latency AudioTrack build failed, falling back", t)
             AudioTrack(
-                AudioManager.STREAM_VOICE_CALL,
+                AudioManager.STREAM_MUSIC,
                 sampleRate,
                 AudioFormat.CHANNEL_OUT_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,

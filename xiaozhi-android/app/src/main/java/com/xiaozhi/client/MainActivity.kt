@@ -3,6 +3,7 @@ package com.xiaozhi.client
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -31,6 +32,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // TTS plays on USAGE_MEDIA (STREAM_MUSIC); route the hardware volume
+        // keys there so they adjust the assistant's voice volume.
+        volumeControlStream = AudioManager.STREAM_MUSIC
 
         enableEdgeToEdge()
         ensureMicPermission()
