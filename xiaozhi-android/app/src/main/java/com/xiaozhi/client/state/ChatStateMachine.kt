@@ -61,28 +61,47 @@ class ChatStateMachine(
 
     /** Begin observing the protocol. Idempotent. */
     fun bind() {
-        if (protocolEventJob?.isActive == true) return
         ensurePipeline()
-        protocolEventJob = scope.launch {
-            // Mirror the web's onClosed: a lost socket ends any active session
-            // (the server forgets the listen state across reconnects, so a
-            // stale LISTENING would silently stop recording forever).
-            launch {
-                protocol.state.collect { s ->
-                    if (s is WebSocketProtocol.ConnectionState.Disconnected ||
-                        s is WebSocketProtocol.ConnectionState.Failed
-                    ) {
-                        if (_state.value != ChatState.IDLE || _sessionActive.value) {
-                            Log.i(TAG, "connection lost — resetting session state")
-                            _state.value = ChatState.IDLE
-                            _sessionActive.value = false
-                            stopPlayback()
-                            stopCapture()
+        if (protocolEventJob?.isActive != true) {
+            protocolEventJob = scope.launch {
+                // Mirror the web's onClosed: a lost socket ends any active session
+                // (the server forgets the listen state across reconnects, so a
+                // stale LISTENING would silently stop recording forever).
+                launch {
+                    protocol.state.collect { s ->
+                        if (s is WebSocketProtocol.ConnectionState.Disconnected ||
+                            s is WebSocketProtocol.ConnectionState.Failed
+                        ) {
+                            if (_state.value != ChatState.IDLE || _sessionActive.value) {
+                                Log.i(TAG, "connection lost — resetting session state")
+                                _state.value = ChatState.IDLE
+                                _sessionActive.value = false
+                                stopPlayback()
+                                stopCapture()
+                            }
                         }
                     }
                 }
+                protocol.events.collectLatest { ev -> handleEvent(ev) }
             }
-            protocol.events.collectLatest { ev -> handleEvent(ev) }
+        }
+        // shutdown() (ChatViewModel.onCleared) cancels the frame/level pipes;
+        // re-arm them here — capture/player live in the app-scoped container
+        // and survive activity restarts, so these jobs must be recreated even
+        // when the pipeline objects already exist. Otherwise the mic encodes
+        // frames that are silently never sent to the server.
+        val cap = capture ?: return
+        if (framePipeJob?.isActive != true) {
+            framePipeJob = scope.launch {
+                cap.frames.collectLatest { packet ->
+                    protocol.sendAudio(packet)
+                }
+            }
+        }
+        if (micLevelJob?.isActive != true) {
+            micLevelJob = scope.launch {
+                cap.level.collectLatest { _micLevel.value = it }
+            }
         }
     }
 
@@ -259,16 +278,7 @@ class ChatStateMachine(
             player = AudioPlayer(scope = scope).also { protocol.attachPlayer(it) }
         }
         if (capture == null) {
-            capture = AudioCapture(scope = scope).also { cap ->
-                framePipeJob = scope.launch {
-                    cap.frames.collectLatest { packet ->
-                        protocol.sendAudio(packet)
-                    }
-                }
-                micLevelJob = scope.launch {
-                    cap.level.collectLatest { _micLevel.value = it }
-                }
-            }
+            capture = AudioCapture(scope = scope)
         }
     }
 
